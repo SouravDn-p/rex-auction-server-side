@@ -3,13 +3,12 @@ const express = require("express");
 const cors = require("cors");
 const port = process.env.PORT || 5000;
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
+console.log(uri);
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -28,6 +27,11 @@ async function run() {
     );
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
+    const announcementCollection = db.collection("announcement");
+
+    // users related apis
+
+    // get all users api
     app.get("/users", async (req, res) => {
       try {
         const users = userCollection.find();
@@ -37,6 +41,18 @@ async function run() {
         res.status(201).send("internal server error!");
       }
     });
+
+    // Announcement Related apis
+
+    // Save Announcement Data in DB
+    app.post("/announcement", async (req, res) => {
+      const announcementData = req.body;
+      const result = await announcementCollection.insertOne(announcementData);
+      res.send({ success: true, result });
+    });
+
+
+
   } finally {
     // await client.close();
   }
