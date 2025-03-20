@@ -70,6 +70,18 @@ async function run() {
       next();
     }
 
+    // verify seller middleware 
+    const verifySeller = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isSeller = user?.role === 'seller';
+      if (!isSeller) {
+        return res.status(401).send({ message: 'unauthorized request' })
+      }
+      next();
+    }
+
 
 
 
