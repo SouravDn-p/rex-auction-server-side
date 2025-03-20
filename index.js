@@ -39,6 +39,7 @@ async function run() {
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: "1h" });
+      console.log(token);
       res.send(token);
     })
 
@@ -65,6 +66,18 @@ async function run() {
       const user = await userCollection.findOne(query);
       const isAdmin = user?.role === 'admin';
       if (!isAdmin) {
+        return res.status(401).send({ message: 'unauthorized request' })
+      }
+      next();
+    }
+
+    // verify manager middleware 
+    const verifyManager = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isManager = user?.role === 'manager';
+      if (!isManager) {
         return res.status(401).send({ message: 'unauthorized request' })
       }
       next();
