@@ -35,9 +35,32 @@ async function run() {
     // JWT 
     app.post("/jwt", async(req, res)=>{
       const user = req.body;
-      const token = jwt.sign(user, process.env.JWT_SECRET,{expiresIn: "1h"});
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN,{expiresIn: "1h"});
       res.send(token);
     })
+
+    // Auth Middleware
+    const verifyToken = (req, res, next) => {
+      console.log("inside verify token", req.headers.authorization);
+      if(!req.headers.authorization){
+        return res.status(401).send({message:"unauthorized request"});
+      }
+      const token = req.headers.authorization.split(" ")[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
+          if (error) {
+              return res.status(401).send({ message: 'unauthorized request' })
+          }
+          req.decoded = decoded;
+          next();
+      })
+    }
+
+    // verify admin 
+
+
+
+
+
 
     // users related apis
 
