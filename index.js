@@ -1,7 +1,9 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 5000;
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -28,6 +30,13 @@ async function run() {
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const announcementCollection = db.collection("announcement");
+
+
+    // JWT 
+    app.post("/jwt", async(req, res)=>{
+      const user = req.body;
+      const token = jwt.sign(user, process.env.JWT_SECRET,{expiresIn: "1h"});
+    })
 
     // users related apis
 
