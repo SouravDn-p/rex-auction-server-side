@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 console.log(uri);
 const client = new MongoClient(uri, {
@@ -44,6 +44,13 @@ async function run() {
 
     // Announcement Related apis
 
+    // get all announcement
+
+    app.get("/announcement", async (req, res) => {
+      const result = await announcementCollection.find().toArray();
+      res.send(result);
+    });
+
     // Save Announcement Data in DB
     app.post("/announcement", async (req, res) => {
       const announcementData = req.body;
@@ -51,8 +58,45 @@ async function run() {
       res.send({ success: true, result });
     });
 
+    // Announcement Delete api
+    app.delete("/announcement/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
 
+      const result = await announcementCollection.deleteOne(filter);
+      res.send(result);
+    });
 
+    //  update announcement api
+    app.put("/announcement/:id", async (req, res) => {
+      const { title, content, date, image } = req.body;
+      const announcementId = req.params.id;
+
+      try {
+        const result = await announcementCollection.updateOne(
+          { _id: new ObjectId(announcementId) }, 
+          {
+            $set: {
+              title,
+              content,
+              date,
+              image, 
+            },
+          }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Announcement not found" });
+        }
+
+        res.status(200).json({
+          message: "Announcement updated successfully",
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Failed to update the announcement" });
+      }
+    });
   } finally {
     // await client.close();
   }
