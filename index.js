@@ -1,12 +1,15 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 5000;
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const req = require("express/lib/request");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 console.log(uri);
 const client = new MongoClient(uri, {
@@ -25,9 +28,77 @@ async function run() {
       process.env.DB_USER,
       process.env.DB_KEY
     );
+
+
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const announcementCollection = db.collection("announcement");
+
+
+    // JWT 
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: "1h" });
+      console.log(token);
+      res.send(token);
+    })
+
+    // Auth Middleware
+    const verifyToken = (req, res, next) => {
+      console.log("inside verify token", req.headers.authorization);
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: "unauthorized request" });
+      }
+      const token = req.headers.authorization.split(" ")[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
+        if (error) {
+          return res.status(403).send({ message: 'forbidden access' })
+        }
+        req.decoded = decoded;
+        next();
+      })
+    }
+
+    // verify admin middleware
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isAdmin = user?.role === 'admin';
+      if (!isAdmin) {
+        return res.status(401).send({ message: 'unauthorized request' })
+      }
+      next();
+    }
+
+    // verify manager middleware 
+    const verifyManager = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isManager = user?.role === 'manager';
+      if (!isManager) {
+        return res.status(401).send({ message: 'unauthorized request' })
+      }
+      next();
+    }
+
+    // verify seller middleware 
+    const verifySeller = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isSeller = user?.role === 'seller';
+      if (!isSeller) {
+        return res.status(401).send({ message: 'unauthorized request' })
+      }
+      next();
+    }
+
+
+
+
+
 
     // users related apis
 
@@ -74,13 +145,13 @@ async function run() {
 
       try {
         const result = await announcementCollection.updateOne(
-          { _id: new ObjectId(announcementId) }, 
+          { _id: new ObjectId(announcementId) },
           {
             $set: {
               title,
               content,
               date,
-              image, 
+              image,
             },
           }
         );
