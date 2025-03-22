@@ -113,6 +113,21 @@ async function run() {
       }
     });
 
+
+       // user data save in db
+       app.post("/users", async (req, res) => {
+        const user = req.body;
+        // Check if the user already exists based on email
+        const query = { email: user.email };
+        const existingUser = await userCollection.findOne(query);
+        if (existingUser) {
+          return res.status(201).send(existingUser);
+        }
+        // Save the new user
+        const result = await userCollection.insertOne(user);
+        res.status(201).send(result);
+      });
+
     // Announcement Related apis
 
     // get all announcement
