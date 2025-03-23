@@ -12,7 +12,7 @@ app.use(express.json());
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const req = require("express/lib/request");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-console.log(uri);
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -34,9 +34,15 @@ async function run() {
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
+
+    const SellerRequestCollection = db.collection("sellerRequest");
+
+    // JWT 
+
     const requestSellerInfoCollection = db.collection("request-seller");
 
     // JWT
+
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
@@ -69,12 +75,21 @@ async function run() {
       const user = await userCollection.findOne(query);
       const isAdmin = user?.role === "admin";
       if (!isAdmin) {
+
+        return res.status(401).send({ message: 'unauthorized request' })
+      }
+      next();
+    }
+
+    // // verify manager middleware 
+
         return res.status(401).send({ message: "unauthorized request" });
       }
       next();
     };
 
     // // verify manager middleware
+
     // const verifyManager = async (req, res, next) => {
     //   const email = req.decoded.email;
     //   const query = { email: email };
@@ -86,7 +101,11 @@ async function run() {
     //   next();
     // }
 
+
+    // verify seller middleware 
+
     // verify seller middleware
+
     const verifySeller = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
@@ -96,6 +115,33 @@ async function run() {
         return res.status(401).send({ message: "unauthorized request" });
       }
       next();
+
+    }
+
+    // seller request apis
+    app.get("/sellerRequest", async (req, res) => {
+      try {
+        const users = SellerRequestCollection.find();
+        const collections = await users.toArray();
+        res.send(collections);
+      } catch (error) {
+        res.status(201).send("internal server error!");
+      }
+    });
+
+    app.delete("/users/:id", async (req, res) => {
+
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) }; // Convert id to MongoDB ObjectId
+        const result = await userCollection.deleteOne(query);
+    
+        if (result.deletedCount > 0) {
+          res.send({ success: true, message: "User deleted successfully!" });
+        } else {
+          res.status(404).send({ success: false, message: "User not found!" });
+        }
+    
+
     };
 
     // seller request apis
@@ -107,6 +153,7 @@ async function run() {
       } catch (error) {
         res.status(201).send("internal server error!");
       }
+
     });
 
     app.delete("/users/:id", async (req, res) => {
@@ -123,6 +170,22 @@ async function run() {
 
     // users related apis
 
+
+       // user data save in db
+       app.post("/users", async (req, res) => {
+        const user = req.body;
+        // Check if the user already exists based on email
+        const query = { email: user.email };
+        const existingUser = await userCollection.findOne(query);
+        if (existingUser) {
+          return res.status(201).send(existingUser);
+        }
+        // Save the new user
+        const result = await userCollection.insertOne(user);
+        res.status(201).send(result);
+      });
+
+      
     // get all users api
     app.get("/users", async (req, res) => {
       try {
@@ -133,6 +196,33 @@ async function run() {
         res.status(201).send("internal server error!");
       }
     });
+
+
+    app.patch("/users/:id", async (req, res) => {
+ 
+        const userId = req.params.id; 
+        const { role } = req.body; 
+    
+        if (!role) {
+          return res.status(400).send({ success: false, message: "Role is required!" });
+        }
+    
+        const updatedUser = await userCollection.updateOne(
+          { _id: new ObjectId(userId) },
+          { $set: { role } } 
+        );
+    
+        if (updatedUser.modifiedCount > 0) {
+          res.send({ success: true, message: "User role updated successfully!" });
+        } else {
+          res.status(404).send({ success: false, message: "User not found or role not changed!" });
+        }
+      
+    });
+    
+
+
+      // Announcement Related apis
 
     // user data save in db
     app.post("/users", async (req, res) => {
@@ -149,6 +239,7 @@ async function run() {
     });
 
     // Announcement Related apis
+
 
     // get all announcement
 
@@ -204,27 +295,49 @@ async function run() {
       }
     });
 
+
+
+    // Auction related apis
+
+    // get all auctions
+    app.get('/auctions', async (req, res) => {
+      try {
+        const email = req.query.email; 
+
     // Auction related apis
 
     // get all auctions
     app.get("/auctions", async (req, res) => {
       try {
         const email = req.query.email;
+
         const filter = email ? { email: email } : {};
         const result = await auctionCollection.find(filter).toArray();
         res.send(result);
       } catch (error) {
+
+        res.status(500).send({ message: 'Internal Server Error', error });
+      }
+    });
+
+    app.post('/auctions', async (req, res) => {
+
         res.status(500).send({ message: "Internal Server Error", error });
       }
     });
 
     app.post("/auctions", async (req, res) => {
+
       const auction = req.body;
       const result = await auctionCollection.insertOne(auction);
       res.send(result);
     });
 
     // app.patch('')
+
+
+
+
 
     // Seller Request info save in db
 
@@ -234,6 +347,7 @@ async function run() {
       const result = await requestSellerInfoCollection.insertOne(requestData);
       res.send({ success: true, result });
     });
+
   } finally {
     // await client.close();
   }
