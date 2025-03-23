@@ -30,20 +30,21 @@ async function run() {
       process.env.DB_KEY
     );
 
-
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
     const SellerRequestCollection = db.collection("sellerRequest");
 
-    // JWT 
+    // JWT
     app.post("/jwt", async (req, res) => {
       const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: "1h" });
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+        expiresIn: "1h",
+      });
       console.log(token);
       res.send(token);
-    })
+    });
 
     // Auth Middleware
     const verifyToken = (req, res, next) => {
@@ -54,26 +55,26 @@ async function run() {
       const token = req.headers.authorization.split(" ")[1];
       jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
         if (error) {
-          return res.status(403).send({ message: 'forbidden access' })
+          return res.status(403).send({ message: "forbidden access" });
         }
         req.decoded = decoded;
         next();
-      })
-    }
+      });
+    };
 
     // verify admin middleware
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isAdmin = user?.role === 'admin';
+      const isAdmin = user?.role === "admin";
       if (!isAdmin) {
-        return res.status(401).send({ message: 'unauthorized request' })
+        return res.status(401).send({ message: "unauthorized request" });
       }
       next();
-    }
+    };
 
-    // // verify manager middleware 
+    // // verify manager middleware
     // const verifyManager = async (req, res, next) => {
     //   const email = req.decoded.email;
     //   const query = { email: email };
@@ -85,17 +86,17 @@ async function run() {
     //   next();
     // }
 
-    // verify seller middleware 
+    // verify seller middleware
     const verifySeller = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isSeller = user?.role === 'seller';
+      const isSeller = user?.role === "seller";
       if (!isSeller) {
-        return res.status(401).send({ message: 'unauthorized request' })
+        return res.status(401).send({ message: "unauthorized request" });
       }
       next();
-    }
+    };
 
     // seller request apis
     app.get("/sellerRequest", async (req, res) => {
@@ -109,39 +110,33 @@ async function run() {
     });
 
     app.delete("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) }; // Convert id to MongoDB ObjectId
+      const result = await userCollection.deleteOne(query);
 
-        const id = req.params.id;
-        const query = { _id: new ObjectId(id) }; // Convert id to MongoDB ObjectId
-        const result = await userCollection.deleteOne(query);
-    
-        if (result.deletedCount > 0) {
-          res.send({ success: true, message: "User deleted successfully!" });
-        } else {
-          res.status(404).send({ success: false, message: "User not found!" });
-        }
-    
+      if (result.deletedCount > 0) {
+        res.send({ success: true, message: "User deleted successfully!" });
+      } else {
+        res.status(404).send({ success: false, message: "User not found!" });
+      }
     });
-
-
 
     // users related apis
 
+    // user data save in db
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      // Check if the user already exists based on email
+      const query = { email: user.email };
+      const existingUser = await userCollection.findOne(query);
+      if (existingUser) {
+        return res.status(201).send(existingUser);
+      }
+      // Save the new user
+      const result = await userCollection.insertOne(user);
+      res.status(201).send(result);
+    });
 
-       // user data save in db
-       app.post("/users", async (req, res) => {
-        const user = req.body;
-        // Check if the user already exists based on email
-        const query = { email: user.email };
-        const existingUser = await userCollection.findOne(query);
-        if (existingUser) {
-          return res.status(201).send(existingUser);
-        }
-        // Save the new user
-        const result = await userCollection.insertOne(user);
-        res.status(201).send(result);
-      });
-
-      
     // get all users api
     app.get("/users", async (req, res) => {
       try {
@@ -154,30 +149,33 @@ async function run() {
     });
 
     app.patch("/users/:id", async (req, res) => {
- 
-        const userId = req.params.id; 
-        const { role } = req.body; 
-    
-        if (!role) {
-          return res.status(400).send({ success: false, message: "Role is required!" });
-        }
-    
-        const updatedUser = await userCollection.updateOne(
-          { _id: new ObjectId(userId) },
-          { $set: { role } } 
-        );
-    
-        if (updatedUser.modifiedCount > 0) {
-          res.send({ success: true, message: "User role updated successfully!" });
-        } else {
-          res.status(404).send({ success: false, message: "User not found or role not changed!" });
-        }
-      
+      const userId = req.params.id;
+      const { role } = req.body;
+
+      if (!role) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Role is required!" });
+      }
+
+      const updatedUser = await userCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $set: { role } }
+      );
+
+      if (updatedUser.modifiedCount > 0) {
+        res.send({ success: true, message: "User role updated successfully!" });
+      } else {
+        res
+          .status(404)
+          .send({
+            success: false,
+            message: "User not found or role not changed!",
+          });
+      }
     });
-    
 
-
-      // Announcement Related apis
+    // Announcement Related apis
 
     // get all announcement
 
@@ -233,31 +231,27 @@ async function run() {
       }
     });
 
-
     // Auction related apis
 
     // get all auctions
-    app.get('/auctions', async (req, res) => {
+    app.get("/auctions", async (req, res) => {
       try {
-        const email = req.query.email; 
+        const email = req.query.email;
         const filter = email ? { email: email } : {};
         const result = await auctionCollection.find(filter).toArray();
         res.send(result);
       } catch (error) {
-        res.status(500).send({ message: 'Internal Server Error', error });
+        res.status(500).send({ message: "Internal Server Error", error });
       }
     });
 
-    app.post('/auctions', async (req, res) => {
+    app.post("/auctions", async (req, res) => {
       const auction = req.body;
       const result = await auctionCollection.insertOne(auction);
       res.send(result);
     });
 
     // app.patch('')
-
-
-
   } finally {
     // await client.close();
   }
