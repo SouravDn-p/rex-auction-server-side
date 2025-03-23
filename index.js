@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 5000;
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
@@ -32,6 +33,7 @@ async function run() {
 
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
+    const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
 
 
@@ -71,17 +73,17 @@ async function run() {
       next();
     }
 
-    // verify manager middleware 
-    const verifyManager = async (req, res, next) => {
-      const email = req.decoded.email;
-      const query = { email: email };
-      const user = await userCollection.findOne(query);
-      const isManager = user?.role === 'manager';
-      if (!isManager) {
-        return res.status(401).send({ message: 'unauthorized request' })
-      }
-      next();
-    }
+    // // verify manager middleware 
+    // const verifyManager = async (req, res, next) => {
+    //   const email = req.decoded.email;
+    //   const query = { email: email };
+    //   const user = await userCollection.findOne(query);
+    //   const isManager = user?.role === 'manager';
+    //   if (!isManager) {
+    //     return res.status(401).send({ message: 'unauthorized request' })
+    //   }
+    //   next();
+    // }
 
     // verify seller middleware 
     const verifySeller = async (req, res, next) => {
@@ -183,6 +185,32 @@ async function run() {
         res.status(500).json({ message: "Failed to update the announcement" });
       }
     });
+
+
+    // Auction related apis
+
+    // get all auctions
+    app.get('/auctions', async (req, res) => {
+      try {
+        const email = req.query.email; 
+        const filter = email ? { email: email } : {};
+        const result = await auctionCollection.find(filter).toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Internal Server Error', error });
+      }
+    });
+
+    app.post('/auctions', async (req, res) => {
+      const auction = req.body;
+      const result = await auctionCollection.insertOne(auction);
+      res.send(result);
+    });
+
+    // app.patch('')
+
+
+
   } finally {
     // await client.close();
   }
