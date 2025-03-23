@@ -154,17 +154,17 @@ async function run() {
     });
 
     app.patch("/users/:id", async (req, res) => {
-      try {
-        const userId = req.params.id; // Get user ID from URL
-        const { role } = req.body; // Get new role from request body
+ 
+        const userId = req.params.id; 
+        const { role } = req.body; 
     
         if (!role) {
           return res.status(400).send({ success: false, message: "Role is required!" });
         }
     
         const updatedUser = await userCollection.updateOne(
-          { _id: new ObjectId(userId) }, // Find user by ID
-          { $set: { role } } // Update role field
+          { _id: new ObjectId(userId) },
+          { $set: { role } } 
         );
     
         if (updatedUser.modifiedCount > 0) {
@@ -172,9 +172,7 @@ async function run() {
         } else {
           res.status(404).send({ success: false, message: "User not found or role not changed!" });
         }
-      } catch (error) {
-        res.status(500).send({ success: false, message: "Internal Server Error!" });
-      }
+      
     });
     
 
