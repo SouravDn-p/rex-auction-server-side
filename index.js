@@ -97,9 +97,30 @@ async function run() {
       next();
     }
 
+    // seller request apis
+    app.get("/sellerRequest", async (req, res) => {
+      try {
+        const users = SellerRequestCollection.find();
+        const collections = await users.toArray();
+        res.send(collections);
+      } catch (error) {
+        res.status(201).send("internal server error!");
+      }
+    });
 
+    app.delete("/users/:id", async (req, res) => {
 
-
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) }; // Convert id to MongoDB ObjectId
+        const result = await userCollection.deleteOne(query);
+    
+        if (result.deletedCount > 0) {
+          res.send({ success: true, message: "User deleted successfully!" });
+        } else {
+          res.status(404).send({ success: false, message: "User not found!" });
+        }
+    
+    });
 
 
     // users related apis
