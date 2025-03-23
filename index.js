@@ -30,20 +30,27 @@ async function run() {
       process.env.DB_KEY
     );
 
-
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
+
     const SellerRequestCollection = db.collection("sellerRequest");
 
     // JWT 
+
+    const requestSellerInfoCollection = db.collection("request-seller");
+
+    // JWT
+
     app.post("/jwt", async (req, res) => {
       const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: "1h" });
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+        expiresIn: "1h",
+      });
       console.log(token);
       res.send(token);
-    })
+    });
 
     // Auth Middleware
     const verifyToken = (req, res, next) => {
@@ -54,26 +61,35 @@ async function run() {
       const token = req.headers.authorization.split(" ")[1];
       jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
         if (error) {
-          return res.status(403).send({ message: 'forbidden access' })
+          return res.status(403).send({ message: "forbidden access" });
         }
         req.decoded = decoded;
         next();
-      })
-    }
+      });
+    };
 
     // verify admin middleware
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isAdmin = user?.role === 'admin';
+      const isAdmin = user?.role === "admin";
       if (!isAdmin) {
+
         return res.status(401).send({ message: 'unauthorized request' })
       }
       next();
     }
 
     // // verify manager middleware 
+
+        return res.status(401).send({ message: "unauthorized request" });
+      }
+      next();
+    };
+
+    // // verify manager middleware
+
     // const verifyManager = async (req, res, next) => {
     //   const email = req.decoded.email;
     //   const query = { email: email };
@@ -85,16 +101,21 @@ async function run() {
     //   next();
     // }
 
+
     // verify seller middleware 
+
+    // verify seller middleware
+
     const verifySeller = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isSeller = user?.role === 'seller';
+      const isSeller = user?.role === "seller";
       if (!isSeller) {
-        return res.status(401).send({ message: 'unauthorized request' })
+        return res.status(401).send({ message: "unauthorized request" });
       }
       next();
+
     }
 
     // seller request apis
@@ -120,9 +141,32 @@ async function run() {
           res.status(404).send({ success: false, message: "User not found!" });
         }
     
+
+    };
+
+    // seller request apis
+    app.get("/sellerRequest", async (req, res) => {
+      try {
+        const users = SellerRequestCollection.find();
+        const collections = await users.toArray();
+        res.send(collections);
+      } catch (error) {
+        res.status(201).send("internal server error!");
+      }
+
     });
 
+    app.delete("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) }; 
+      const result = await userCollection.deleteOne(query);
 
+      if (result.deletedCount > 0) {
+        res.send({ success: true, message: "User deleted successfully!" });
+      } else {
+        res.status(404).send({ success: false, message: "User not found!" });
+      }
+    });
 
     // users related apis
 
@@ -153,6 +197,7 @@ async function run() {
       }
     });
 
+
     app.patch("/users/:id", async (req, res) => {
  
         const userId = req.params.id; 
@@ -178,6 +223,23 @@ async function run() {
 
 
       // Announcement Related apis
+
+    // user data save in db
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      // Check if the user already exists based on email
+      const query = { email: user.email };
+      const existingUser = await userCollection.findOne(query);
+      if (existingUser) {
+        return res.status(201).send(existingUser);
+      }
+      // Save the new user
+      const result = await userCollection.insertOne(user);
+      res.status(201).send(result);
+    });
+
+    // Announcement Related apis
+
 
     // get all announcement
 
@@ -234,21 +296,38 @@ async function run() {
     });
 
 
+
     // Auction related apis
 
     // get all auctions
     app.get('/auctions', async (req, res) => {
       try {
         const email = req.query.email; 
+
+    // Auction related apis
+
+    // get all auctions
+    app.get("/auctions", async (req, res) => {
+      try {
+        const email = req.query.email;
+
         const filter = email ? { email: email } : {};
         const result = await auctionCollection.find(filter).toArray();
         res.send(result);
       } catch (error) {
+
         res.status(500).send({ message: 'Internal Server Error', error });
       }
     });
 
     app.post('/auctions', async (req, res) => {
+
+        res.status(500).send({ message: "Internal Server Error", error });
+      }
+    });
+
+    app.post("/auctions", async (req, res) => {
+
       const auction = req.body;
       const result = await auctionCollection.insertOne(auction);
       res.send(result);
@@ -257,6 +336,17 @@ async function run() {
     // app.patch('')
 
 
+
+
+
+    // Seller Request info save in db
+
+    app.post("/become_seller", async (req, res) => {
+      const requestData = req.body;
+      console.log(requestData)
+      const result = await requestSellerInfoCollection.insertOne(requestData);
+      res.send({ success: true, result });
+    });
 
   } finally {
     // await client.close();
