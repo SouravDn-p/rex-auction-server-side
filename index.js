@@ -5,7 +5,6 @@ const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 5000;
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
@@ -191,8 +190,6 @@ async function run() {
       const result = await auctionCollection.insertOne(auction);
       res.send(result);
     });
-
-    // app.patch('')
 
 
 
