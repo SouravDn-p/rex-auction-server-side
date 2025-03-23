@@ -5,7 +5,6 @@ const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 5000;
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
@@ -333,13 +332,28 @@ async function run() {
       res.send(result);
     });
 
-    // app.patch('')
+    app.patch("/auctions/:id", async (req, res) => {
+      const auctionId = req.params.id;
+      const { status } = req.body;
+      const filter = { _id: new ObjectId(auctionId) };
+      const updateDoc = {
+        $set: {
+          status, // Update only the status field
+        },
+      };
+      const result = await auctionCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+    
+
+
 
 
 
 
 
     // Seller Request info save in db
+
 
     app.post("/become_seller", async (req, res) => {
       const requestData = req.body;
