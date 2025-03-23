@@ -223,12 +223,20 @@ async function run() {
       res.send(result);
     });
 
-<<<<<<< HEAD
-=======
-    // app.patch('')
+    app.patch("/auctions/:id", async (req, res) => {
+      const auctionId = req.params.id;
+      const { status } = req.body;
+      const filter = { _id: new ObjectId(auctionId) };
+      const updateDoc = {
+        $set: {
+          status, // Update only the status field
+        },
+      };
+      const result = await auctionCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+    
 
-    // Seller Request info save in db
->>>>>>> 8f0f9c63b9eca2bd1098bf95f44b13d900353681
 
     app.post("/become_seller", async (req, res) => {
       const requestData = req.body;
