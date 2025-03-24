@@ -88,10 +88,7 @@ async function run() {
       next();
     };
 
-    };
 
-
-    // seller request apis
     // seller request apis
 
     // seller request apis
@@ -112,16 +109,7 @@ async function run() {
       console.log(requestData);
       const result = await SellerRequestCollection.insertOne(requestData);
       res.send({ success: true, result });
-
-    // Seller Request info save in db
-    app.post("/become_seller", async (req, res) => {
-      const requestData = req.body;
-      console.log(requestData);
-      const result = await SellerRequestCollection.insertOne(requestData);
-      res.send({ success: true, result });
     });
-
-    // user data save in db
 
     // user data save in db
 
@@ -136,6 +124,23 @@ async function run() {
       }
     });
 
+    
+    app.get("/user/:email", async (req, res) => {
+      try {
+        const email = req.params.email; 
+        const user = await userCollection.findOne({ email: email }); 
+    
+        if (!user) {
+          return res.status(404).json({ message: "User not found" });
+        }
+    
+        res.json(user); 
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        res.status(500).json({ message: "Internal server error!" });
+      }
+    });
+
     app.post("/users", async (req, res) => {
       const user = req.body;
       // Check if the user already exists based on email
@@ -147,49 +152,6 @@ async function run() {
       // Save the new user
       const result = await userCollection.insertOne(user);
       res.status(201).send(result);
-    });
-
-    
-
-    // Specific user role update
-
-    app.patch("/users/:id", async (req, res) => {
-      const userId = req.params.id;
-      const { role } = req.body;
-
-      if (!role) {
-        return res
-          .status(400)
-          .send({ success: false, message: "Role is required!" });
-      }
-
-      const updatedUser = await userCollection.updateOne(
-        { _id: new ObjectId(userId) },
-        { $set: { role } }
-      );
-
-      if (updatedUser.modifiedCount > 0) {
-        res.send({ success: true, message: "User role updated successfully!" });
-      } else {
-        res
-          .status(404)
-          .send({
-            success: false,
-            message: "User not found or role not changed!",
-          });
-      }
-    });
-
-    app.delete("/users/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await userCollection.deleteOne(query);
-
-      if (result.deletedCount > 0) {
-        res.send({ success: true, message: "User deleted successfully!" });
-      } else {
-        res.status(404).send({ success: false, message: "User not found!" });
-      }
     });
 
     
@@ -296,14 +258,18 @@ async function run() {
     // get all auctions
     app.get("/auctions", async (req, res) => {
       try {
-        const email = req.query.email;
-        const filter = email ? { email: email } : {};
-        const result = await auctionCollection.find(filter).toArray();
+        const result = await auctionCollection.find().toArray();
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error", error });
       }
     });
+
+    app.get('/auctions/:email', async (req, res) => {
+      const { email } = req.params;
+      const auctions = await auctionCollection.find({ sellerEmail: email }).toArray(); // Assuming sellerEmail stores the email
+      res.send(auctions);
+  });
 
     app.post("/auctions", async (req, res) => {
       const auction = req.body;
