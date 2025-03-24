@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 3000;
 
 const app = express();
 app.use(cors());
@@ -34,7 +34,7 @@ async function run() {
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
     const SellerRequestCollection = db.collection("sellerRequest");
-    const requestSellerInfoCollection = db.collection("request-seller");
+
 
     // JWT
 
@@ -109,6 +109,19 @@ async function run() {
       console.log(requestData);
       const result = await SellerRequestCollection.insertOne(requestData);
       res.send({ success: true, result });
+    });
+
+    
+    app.delete("/sellerRequest/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await SellerRequestCollection.deleteOne(query);
+
+      if (result.deletedCount > 0) {
+        res.send({ success: true, message: "User deleted successfully!" });
+      } else {
+        res.status(404).send({ success: false, message: "User not found!" });
+      }
     });
 
     // user data save in db
@@ -196,6 +209,7 @@ async function run() {
         res.status(404).send({ success: false, message: "User not found!" });
       }
     });
+
 
     // Announcement Related apis
 
