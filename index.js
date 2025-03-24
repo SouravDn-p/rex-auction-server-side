@@ -272,14 +272,18 @@ async function run() {
     // get all auctions
     app.get("/auctions", async (req, res) => {
       try {
-        const email = req.query.email;
-        const filter = email ? { email: email } : {};
-        const result = await auctionCollection.find(filter).toArray();
+        const result = await auctionCollection.find().toArray();
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error", error });
       }
     });
+
+    app.get('/auctions/:email', async (req, res) => {
+      const { email } = req.params;
+      const auctions = await auctionCollection.find({ sellerEmail: email }).toArray(); // Assuming sellerEmail stores the email
+      res.send(auctions);
+  });
 
     app.post("/auctions", async (req, res) => {
       const auction = req.body;
