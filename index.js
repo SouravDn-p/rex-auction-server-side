@@ -5,7 +5,6 @@ const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 5000;
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
@@ -35,8 +34,10 @@ async function run() {
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
     const SellerRequestCollection = db.collection("sellerRequest");
+    const requestSellerInfoCollection = db.collection("request-seller");
 
     // JWT
+
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
@@ -74,19 +75,8 @@ async function run() {
       next();
     };
 
-    // // verify manager middleware
-    // const verifyManager = async (req, res, next) => {
-    //   const email = req.decoded.email;
-    //   const query = { email: email };
-    //   const user = await userCollection.findOne(query);
-    //   const isManager = user?.role === 'manager';
-    //   if (!isManager) {
-    //     return res.status(401).send({ message: 'unauthorized request' })
-    //   }
-    //   next();
-    // }
-
     // verify seller middleware
+
     const verifySeller = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
@@ -97,6 +87,9 @@ async function run() {
       }
       next();
     };
+
+
+    // seller request apis
 
     // seller request apis
     app.get("/sellerRequest", async (req, res) => {
@@ -109,21 +102,28 @@ async function run() {
       }
     });
 
-    app.delete("/users/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) }; // Convert id to MongoDB ObjectId
-      const result = await userCollection.deleteOne(query);
 
-      if (result.deletedCount > 0) {
-        res.send({ success: true, message: "User deleted successfully!" });
-      } else {
-        res.status(404).send({ success: false, message: "User not found!" });
+    // Seller Request info save in db
+    app.post("/become_seller", async (req, res) => {
+      const requestData = req.body;
+      console.log(requestData);
+      const result = await SellerRequestCollection.insertOne(requestData);
+      res.send({ success: true, result });
+    });
+
+    // user data save in db
+
+    // get all users api
+    app.get("/users", async (req, res) => {
+      try {
+        const users = userCollection.find();
+        const collections = await users.toArray();
+        res.send(collections);
+      } catch (error) {
+        res.status(201).send("internal server error!");
       }
     });
 
-    // users related apis
-
-    // user data save in db
     app.post("/users", async (req, res) => {
       const user = req.body;
       // Check if the user already exists based on email
@@ -137,16 +137,9 @@ async function run() {
       res.status(201).send(result);
     });
 
-    // get all users api
-    app.get("/users", async (req, res) => {
-      try {
-        const users = userCollection.find();
-        const collections = await users.toArray();
-        res.send(collections);
-      } catch (error) {
-        res.status(201).send("internal server error!");
-      }
-    });
+    
+
+    // Specific user role update
 
     app.patch("/users/:id", async (req, res) => {
       const userId = req.params.id;
@@ -172,6 +165,18 @@ async function run() {
             success: false,
             message: "User not found or role not changed!",
           });
+      }
+    });
+
+    app.delete("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
+
+      if (result.deletedCount > 0) {
+        res.send({ success: true, message: "User deleted successfully!" });
+      } else {
+        res.status(404).send({ success: false, message: "User not found!" });
       }
     });
 
@@ -251,7 +256,19 @@ async function run() {
       res.send(result);
     });
 
-    // app.patch('')
+    app.patch("/auctions/:id", async (req, res) => {
+      const auctionId = req.params.id;
+      const { status } = req.body;
+      const filter = { _id: new ObjectId(auctionId) };
+      const updateDoc = {
+        $set: {
+          status, // Update only the status field
+        },
+      };
+      const result = await auctionCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
   } finally {
     // await client.close();
   }
