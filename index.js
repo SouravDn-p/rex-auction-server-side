@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
 const app = express();
 app.use(cors());
@@ -34,7 +34,6 @@ async function run() {
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
     const SellerRequestCollection = db.collection("sellerRequest");
-
 
     // JWT
 
@@ -88,7 +87,6 @@ async function run() {
       next();
     };
 
-
     // seller request apis
 
     // seller request apis
@@ -102,7 +100,6 @@ async function run() {
       }
     });
 
-
     // Seller Request info save in db
     app.post("/become_seller", async (req, res) => {
       const requestData = req.body;
@@ -111,7 +108,6 @@ async function run() {
       res.send({ success: true, result });
     });
 
-    
     app.delete("/sellerRequest/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -137,17 +133,16 @@ async function run() {
       }
     });
 
-    
     app.get("/user/:email", async (req, res) => {
       try {
-        const email = req.params.email; 
-        const user = await userCollection.findOne({ email: email }); 
-    
+        const email = req.params.email;
+        const user = await userCollection.findOne({ email: email });
+
         if (!user) {
           return res.status(404).json({ message: "User not found" });
         }
-    
-        res.json(user); 
+
+        res.json(user);
       } catch (error) {
         console.error("Error fetching user:", error);
         res.status(500).json({ message: "Internal server error!" });
@@ -166,8 +161,6 @@ async function run() {
       const result = await userCollection.insertOne(user);
       res.status(201).send(result);
     });
-
-    
 
     // Specific user role update
 
@@ -189,12 +182,10 @@ async function run() {
       if (updatedUser.modifiedCount > 0) {
         res.send({ success: true, message: "User role updated successfully!" });
       } else {
-        res
-          .status(404)
-          .send({
-            success: false,
-            message: "User not found or role not changed!",
-          });
+        res.status(404).send({
+          success: false,
+          message: "User not found or role not changed!",
+        });
       }
     });
 
@@ -209,7 +200,6 @@ async function run() {
         res.status(404).send({ success: false, message: "User not found!" });
       }
     });
-
 
     // Announcement Related apis
 
@@ -279,11 +269,13 @@ async function run() {
       }
     });
 
-    app.get('/auctions/:email', async (req, res) => {
+    app.get("/auctions/:email", async (req, res) => {
       const { email } = req.params;
-      const auctions = await auctionCollection.find({ sellerEmail: email }).toArray(); // Assuming sellerEmail stores the email
+      const auctions = await auctionCollection
+        .find({ sellerEmail: email })
+        .toArray(); // Assuming sellerEmail stores the email
       res.send(auctions);
-  });
+    });
 
     app.post("/auctions", async (req, res) => {
       const auction = req.body;
@@ -303,7 +295,6 @@ async function run() {
       const result = await auctionCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
-
   } finally {
     // await client.close();
   }
