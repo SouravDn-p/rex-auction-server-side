@@ -1,11 +1,18 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const jwt = require("jsonwebtoken");
+var jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 const port = process.env.PORT || 5000;
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -24,9 +31,9 @@ async function run() {
   try {
     await client.connect();
     console.log(
-      "connected to mongodb",
-      process.env.DB_USER,
-      process.env.DB_KEY
+      "connected to mongodb"
+      // process.env.DB_USER,
+      // process.env.DB_KEY
     );
 
     const db = client.db("rexAuction");
@@ -40,27 +47,56 @@ async function run() {
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
-        expiresIn: "1h",
+        expiresIn: "1d",
       });
-      console.log(token);
-      res.send(token);
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: false,
+        })
+        .send({ success: true });
+      // res.send(token);
+    });
+
+    app.post("/logout", (req, res) => {
+      res
+        .clearCookie("token", {
+          httpOnly: true,
+          secure: false,
+        })
+        .send({ success: true });
     });
 
     // Auth Middleware
     const verifyToken = (req, res, next) => {
-      console.log("inside verify token", req.headers.authorization);
-      if (!req.headers.authorization) {
-        return res.status(401).send({ message: "unauthorized request" });
+      console.log("inside the verifyToken ~", req.cookies);
+      const token = req?.cookies?.token;
+      if (!token) {
+        return res.status(401).send({ message: "UnAuthorize access" });
       }
-      const token = req.headers.authorization.split(" ")[1];
-      jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
-        if (error) {
-          return res.status(403).send({ message: "forbidden access" });
+      jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: "UnAuthorize access" });
         }
-        req.decoded = decoded;
+        req.decodedUser = decoded;
         next();
       });
     };
+
+    // const verifyToken = (req, res, next) => {
+    //   console.log("inside verify token", req.headers.authorization);
+    //   if (!req.headers.authorization) {
+    //     return res.status(401).send({ message: "unauthorized request" });
+    //   }
+    //   const token = req.headers.authorization.split(" ")[1];
+    //   jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
+    //     if (error) {
+    //       return res.status(403).send({ message: "forbidden access" });
+    //     }
+    //     req.decoded = decoded;
+    //     next();
+    //   });
+    // };
 
     // verify admin middleware
     const verifyAdmin = async (req, res, next) => {
@@ -75,7 +111,6 @@ async function run() {
     };
 
     // verify seller middleware
-
     const verifySeller = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
@@ -123,14 +158,14 @@ async function run() {
     // user data save in db
 
     // get all users api
-    app.get("/users", async (req, res) => {
-      try {
-        const users = userCollection.find();
-        const collections = await users.toArray();
-        res.send(collections);
-      } catch (error) {
-        res.status(201).send("internal server error!");
+    app.get("/users", verifyToken, async (req, res) => {
+      const email = req.query.email;
+      const users = userCollection.find();
+      if (email != req.decodedUser.email) {
+        return res.status(403).send({ message: "forbidden  access" });
       }
+      const collections = await users.toArray();
+      res.send(collections);
     });
 
     app.get("/user/:email", async (req, res) => {
