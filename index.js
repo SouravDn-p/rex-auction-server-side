@@ -158,7 +158,7 @@ async function run() {
     // user data save in db
 
     // get all users api
-    app.get("/users", verifyToken, async (req, res) => {
+    app.get("/users", async (req, res) => {
       const email = req.query.email;
       const users = userCollection.find();
       if (email != req.decodedUser.email) {
@@ -327,6 +327,17 @@ async function run() {
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error", error });
+      }
+    });
+
+    app.get("/auction/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const query = { _id: new ObjectId(id) };
+        const result = await auctionCollection.findOne(query);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch Auctions", error });
       }
     });
 
