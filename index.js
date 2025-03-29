@@ -197,6 +197,32 @@ async function run() {
       res.status(201).send(result);
     });
 
+    // Update user profile
+    app.patch("/user/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+        const updatedData = req.body;
+
+        delete updatedData._id;
+
+        const result = await userCollection.updateOne(
+          { email: email },
+          { $set: updatedData }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "User not found" });
+        }
+
+        // Get and return the updated user document
+        const updatedUser = await userCollection.findOne({ email: email });
+        res.json(updatedUser);
+      } catch (error) {
+        console.error("Error updating user:", error);
+        res.status(500).json({ message: "Internal server error!" });
+      }
+    });
+
     // Specific user role update
 
     app.patch("/users/:id", async (req, res) => {
