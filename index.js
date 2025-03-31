@@ -161,9 +161,9 @@ async function run() {
     app.get("/users", async (req, res) => {
       const email = req.query.email;
       const users = userCollection.find();
-      if (email != req.decodedUser.email) {
-        return res.status(403).send({ message: "forbidden  access" });
-      }
+      // if (email != req.decodedUser.email) {
+      //   return res.status(403).send({ message: "forbidden  access" });
+      // }
       const collections = await users.toArray();
       res.send(collections);
     });
