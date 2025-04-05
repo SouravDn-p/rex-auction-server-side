@@ -41,6 +41,7 @@ async function run() {
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
     const SellerRequestCollection = db.collection("sellerRequest");
+    const SpecificUserLiveBiddingCollection = db.collection('liveBids');
 
     // JWT
 
@@ -319,7 +320,7 @@ async function run() {
       const { email } = req.params;
       const auctions = await auctionCollection
         .find({ sellerEmail: email })
-        .toArray(); // Assuming sellerEmail stores the email
+        .toArray(); 
       res.send(auctions);
     });
 
@@ -341,6 +342,59 @@ async function run() {
       const result = await auctionCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
+
+
+
+// Get top bidders 
+app.get("/live-bid/top", async (req, res) => {
+  const { auctionId } = req.query;
+  const query = auctionId ? { auctionId } : {};
+
+  const result = await SpecificUserLiveBiddingCollection
+    .aggregate([
+      { $match: query },
+      { $group: {
+        _id: "$email", // Group by user email
+        name: { $first: "$name" },
+        photo: { $first: "$photo" },
+        amount: { $max: "$amount" }, // Take the highest bid
+        auctionId: { $first: "$auctionId" },
+      }},
+      { $sort: { amount: -1 } }, // Sort by amount in descending order
+      { $limit: 3 } // Limit to top 3 unique bidders
+    ])
+    .toArray();
+  res.send(result);
+});
+
+// Get recent activity 
+app.get("/live-bid/recent", async (req, res) => {
+  const { auctionId } = req.query;
+  const query = auctionId ? { auctionId } : {};
+
+  const result = await SpecificUserLiveBiddingCollection
+    .find(query)
+    .sort({ createdAt: -1 }) 
+    .limit(3) 
+    .toArray();
+  res.send(result);
+});
+
+// Post a new bid 
+app.post("/live-bid", async (req, res) => {
+  const liveBid = req.body;
+  liveBid.createdAt = new Date();
+  const result = await SpecificUserLiveBiddingCollection.insertOne(liveBid);
+  
+  // Update the auction's current bid
+  await auctionCollection.updateOne(
+    { _id: liveBid.auctionId },
+    { $set: { currentBid: liveBid.amount } }
+  );
+  
+  res.send(result);
+});
+    
   } finally {
     // await client.close();
   }
