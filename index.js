@@ -1,11 +1,22 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+<<<<<<< HEAD
 const jwt = require("jsonwebtoken");
+=======
+var jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
+>>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
 const port = process.env.PORT || 5000;
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -24,9 +35,9 @@ async function run() {
   try {
     await client.connect();
     console.log(
-      "connected to mongodb",
-      process.env.DB_USER,
-      process.env.DB_KEY
+      "connected to mongodb"
+      // process.env.DB_USER,
+      // process.env.DB_KEY
     );
 
     const db = client.db("rexAuction");
@@ -34,33 +45,66 @@ async function run() {
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
     const SellerRequestCollection = db.collection("sellerRequest");
+<<<<<<< HEAD
+=======
+    const SpecificUserLiveBiddingCollection = db.collection('liveBids');
+>>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
 
     // JWT
 
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
-        expiresIn: "1h",
+        expiresIn: "1d",
       });
-      console.log(token);
-      res.send(token);
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: false,
+        })
+        .send({ success: true });
+      // res.send(token);
+    });
+
+    app.post("/logout", (req, res) => {
+      res
+        .clearCookie("token", {
+          httpOnly: true,
+          secure: false,
+        })
+        .send({ success: true });
     });
 
     // Auth Middleware
     const verifyToken = (req, res, next) => {
-      console.log("inside verify token", req.headers.authorization);
-      if (!req.headers.authorization) {
-        return res.status(401).send({ message: "unauthorized request" });
+      console.log("inside the verifyToken ~", req.cookies);
+      const token = req?.cookies?.token;
+      if (!token) {
+        return res.status(401).send({ message: "UnAuthorize access" });
       }
-      const token = req.headers.authorization.split(" ")[1];
-      jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
-        if (error) {
-          return res.status(403).send({ message: "forbidden access" });
+      jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: "UnAuthorize access" });
         }
-        req.decoded = decoded;
+        req.decodedUser = decoded;
         next();
       });
     };
+
+    // const verifyToken = (req, res, next) => {
+    //   console.log("inside verify token", req.headers.authorization);
+    //   if (!req.headers.authorization) {
+    //     return res.status(401).send({ message: "unauthorized request" });
+    //   }
+    //   const token = req.headers.authorization.split(" ")[1];
+    //   jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
+    //     if (error) {
+    //       return res.status(403).send({ message: "forbidden access" });
+    //     }
+    //     req.decoded = decoded;
+    //     next();
+    //   });
+    // };
 
     // verify admin middleware
     const verifyAdmin = async (req, res, next) => {
@@ -75,7 +119,6 @@ async function run() {
     };
 
     // verify seller middleware
-
     const verifySeller = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
@@ -124,13 +167,13 @@ async function run() {
 
     // get all users api
     app.get("/users", async (req, res) => {
-      try {
-        const users = userCollection.find();
-        const collections = await users.toArray();
-        res.send(collections);
-      } catch (error) {
-        res.status(201).send("internal server error!");
-      }
+      const email = req.query.email;
+      const users = userCollection.find();
+      // if (email != req.decodedUser.email) {
+      //   return res.status(403).send({ message: "forbidden  access" });
+      // }
+      const collections = await users.toArray();
+      res.send(collections);
     });
 
     app.get("/user/:email", async (req, res) => {
@@ -269,11 +312,29 @@ async function run() {
       }
     });
 
+<<<<<<< HEAD
+=======
+    app.get("/auction/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const query = { _id: new ObjectId(id) };
+        const result = await auctionCollection.findOne(query);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch Auctions", error });
+      }
+    });
+
+>>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
     app.get("/auctions/:email", async (req, res) => {
       const { email } = req.params;
       const auctions = await auctionCollection
         .find({ sellerEmail: email })
+<<<<<<< HEAD
         .toArray(); // Assuming sellerEmail stores the email
+=======
+        .toArray(); 
+>>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
       res.send(auctions);
     });
 
@@ -295,6 +356,62 @@ async function run() {
       const result = await auctionCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
+<<<<<<< HEAD
+=======
+
+
+
+// Get top bidders 
+app.get("/live-bid/top", async (req, res) => {
+  const { auctionId } = req.query;
+  const query = auctionId ? { auctionId } : {};
+
+  const result = await SpecificUserLiveBiddingCollection
+    .aggregate([
+      { $match: query },
+      { $group: {
+        _id: "$email", // Group by user email
+        name: { $first: "$name" },
+        photo: { $first: "$photo" },
+        amount: { $max: "$amount" }, // Take the highest bid
+        auctionId: { $first: "$auctionId" },
+      }},
+      { $sort: { amount: -1 } }, // Sort by amount in descending order
+      { $limit: 3 } // Limit to top 3 unique bidders
+    ])
+    .toArray();
+  res.send(result);
+});
+
+// Get recent activity 
+app.get("/live-bid/recent", async (req, res) => {
+  const { auctionId } = req.query;
+  const query = auctionId ? { auctionId } : {};
+
+  const result = await SpecificUserLiveBiddingCollection
+    .find(query)
+    .sort({ createdAt: -1 }) 
+    .limit(3) 
+    .toArray();
+  res.send(result);
+});
+
+// Post a new bid 
+app.post("/live-bid", async (req, res) => {
+  const liveBid = req.body;
+  liveBid.createdAt = new Date();
+  const result = await SpecificUserLiveBiddingCollection.insertOne(liveBid);
+  
+  // Update the auction's current bid
+  await auctionCollection.updateOne(
+    { _id: liveBid.auctionId },
+    { $set: { currentBid: liveBid.amount } }
+  );
+  
+  res.send(result);
+});
+    
+>>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
   } finally {
     // await client.close();
   }
