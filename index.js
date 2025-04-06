@@ -1,12 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-<<<<<<< HEAD
-const jwt = require("jsonwebtoken");
-=======
 var jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
->>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
 const port = process.env.PORT || 5000;
 
 const app = express();
@@ -45,11 +41,8 @@ async function run() {
     const auctionCollection = db.collection("auctionsList");
     const announcementCollection = db.collection("announcement");
     const SellerRequestCollection = db.collection("sellerRequest");
-<<<<<<< HEAD
-=======
-    const SpecificUserLiveBiddingCollection = db.collection('liveBids');
->>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
-
+    const SpecificUserLiveBiddingCollection = db.collection("liveBids");
+    const reportCollection = db.collection("reports");
     // JWT
 
     app.post("/jwt", async (req, res) => {
@@ -312,8 +305,6 @@ async function run() {
       }
     });
 
-<<<<<<< HEAD
-=======
     app.get("/auction/:id", async (req, res) => {
       const { id } = req.params;
       try {
@@ -325,16 +316,11 @@ async function run() {
       }
     });
 
->>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
     app.get("/auctions/:email", async (req, res) => {
       const { email } = req.params;
       const auctions = await auctionCollection
         .find({ sellerEmail: email })
-<<<<<<< HEAD
-        .toArray(); // Assuming sellerEmail stores the email
-=======
-        .toArray(); 
->>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
+        .toArray();
       res.send(auctions);
     });
 
@@ -356,62 +342,85 @@ async function run() {
       const result = await auctionCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
-<<<<<<< HEAD
-=======
 
+    // Get top bidders
+    app.get("/live-bid/top", async (req, res) => {
+      const { auctionId } = req.query;
+      const query = auctionId ? { auctionId } : {};
 
+      const result = await SpecificUserLiveBiddingCollection.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: "$email", // Group by user email
+            name: { $first: "$name" },
+            photo: { $first: "$photo" },
+            amount: { $max: "$amount" }, // Take the highest bid
+            auctionId: { $first: "$auctionId" },
+          },
+        },
+        { $sort: { amount: -1 } }, // Sort by amount in descending order
+        { $limit: 3 }, // Limit to top 3 unique bidders
+      ]).toArray();
+      res.send(result);
+    });
 
-// Get top bidders 
-app.get("/live-bid/top", async (req, res) => {
-  const { auctionId } = req.query;
-  const query = auctionId ? { auctionId } : {};
+    // Get recent activity
+    app.get("/live-bid/recent", async (req, res) => {
+      const { auctionId } = req.query;
+      const query = auctionId ? { auctionId } : {};
 
-  const result = await SpecificUserLiveBiddingCollection
-    .aggregate([
-      { $match: query },
-      { $group: {
-        _id: "$email", // Group by user email
-        name: { $first: "$name" },
-        photo: { $first: "$photo" },
-        amount: { $max: "$amount" }, // Take the highest bid
-        auctionId: { $first: "$auctionId" },
-      }},
-      { $sort: { amount: -1 } }, // Sort by amount in descending order
-      { $limit: 3 } // Limit to top 3 unique bidders
-    ])
-    .toArray();
-  res.send(result);
-});
+      const result = await SpecificUserLiveBiddingCollection.find(query)
+        .sort({ createdAt: -1 })
+        .limit(3)
+        .toArray();
+      res.send(result);
+    });
 
-// Get recent activity 
-app.get("/live-bid/recent", async (req, res) => {
-  const { auctionId } = req.query;
-  const query = auctionId ? { auctionId } : {};
+    // Post a new bid
+    app.post("/live-bid", async (req, res) => {
+      const liveBid = req.body;
+      liveBid.createdAt = new Date();
+      const result = await SpecificUserLiveBiddingCollection.insertOne(liveBid);
 
-  const result = await SpecificUserLiveBiddingCollection
-    .find(query)
-    .sort({ createdAt: -1 }) 
-    .limit(3) 
-    .toArray();
-  res.send(result);
-});
+      // Update the auction's current bid
+      await auctionCollection.updateOne(
+        { _id: liveBid.auctionId },
+        { $set: { currentBid: liveBid.amount } }
+      );
 
-// Post a new bid 
-app.post("/live-bid", async (req, res) => {
-  const liveBid = req.body;
-  liveBid.createdAt = new Date();
-  const result = await SpecificUserLiveBiddingCollection.insertOne(liveBid);
-  
-  // Update the auction's current bid
-  await auctionCollection.updateOne(
-    { _id: liveBid.auctionId },
-    { $set: { currentBid: liveBid.amount } }
-  );
-  
-  res.send(result);
-});
-    
->>>>>>> e83d0bd4952663c578322e809c4f96096617cf2c
+      // GET a report(Joyeta)
+      app.get("/reports", async (req, res) => {
+        try {
+          const reports = await reportCollection.find().toArray();
+          res.send(reports);
+        } catch (error) {
+          res
+            .status(500)
+            .send({ message: "Failed to fetch reports", error: error.message });
+        }
+      });
+
+      // POST a report (Joyeta)
+      app.post("/reports", async (req, res) => {
+        try {
+          const report = req.body;
+
+          if (!report || Object.keys(report).length === 0) {
+            return res.status(400).send({ message: "Report data is required" });
+          }
+
+          const result = await reportCollection.insertOne(report);
+          res.send(result);
+        } catch (error) {
+          res
+            .status(500)
+            .send({ message: "Failed to submit report", error: error.message });
+        }
+      });
+
+      res.send(result);
+    });
   } finally {
     // await client.close();
   }
