@@ -333,16 +333,6 @@ async function run() {
 
     // Auction related apis
 
-    // get all auctions
-    app.get("/auctions", async (req, res) => {
-      try {
-        const result = await auctionCollection.find().toArray();
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: "Internal Server Error", error });
-      }
-    });
-
     app.get("/auction/:id", async (req, res) => {
       const { id } = req.params;
       try {
@@ -354,12 +344,20 @@ async function run() {
       }
     });
 
-    app.get("/auctions/:email", async (req, res) => {
-      const { email } = req.params;
-      const auctions = await auctionCollection
-        .find({ sellerEmail: email })
-        .toArray(); 
-      res.send(auctions);
+    // / Get all auctions or filter by email
+    app.get("/auctions", async (req, res) => {
+      try {
+        const { email } = req.query; 
+        if (email) {
+          const auctions = await auctionCollection.find({ sellerEmail: email }).toArray();
+          res.send(auctions);
+        } else {
+          const result = await auctionCollection.find().toArray();
+          res.send(result);
+        }
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error });
+      }
     });
 
     app.post("/auctions", async (req, res) => {
@@ -381,58 +379,70 @@ async function run() {
       res.send(result);
     });
 
-
-
-// Get top bidders 
-app.get("/live-bid/top", async (req, res) => {
-  const { auctionId } = req.query;
-  const query = auctionId ? { auctionId } : {};
-
-  const result = await SpecificUserLiveBiddingCollection
-    .aggregate([
-      { $match: query },
-      { $group: {
-        _id: "$email", // Group by user email
-        name: { $first: "$name" },
-        photo: { $first: "$photo" },
-        amount: { $max: "$amount" }, // Take the highest bid
-        auctionId: { $first: "$auctionId" },
-      }},
-      { $sort: { amount: -1 } }, // Sort by amount in descending order
-      { $limit: 3 } // Limit to top 3 unique bidders
-    ])
-    .toArray();
-  res.send(result);
-});
-
-// Get recent activity 
-app.get("/live-bid/recent", async (req, res) => {
-  const { auctionId } = req.query;
-  const query = auctionId ? { auctionId } : {};
-
-  const result = await SpecificUserLiveBiddingCollection
-    .find(query)
-    .sort({ createdAt: -1 }) 
-    .limit(3) 
-    .toArray();
-  res.send(result);
-});
-
-// Post a new bid 
-app.post("/live-bid", async (req, res) => {
-  const liveBid = req.body;
-  liveBid.createdAt = new Date();
-  const result = await SpecificUserLiveBiddingCollection.insertOne(liveBid);
-  
-  // Update the auction's current bid
-  await auctionCollection.updateOne(
-    { _id: liveBid.auctionId },
-    { $set: { currentBid: liveBid.amount } }
-  );
-  
-  res.send(result);
-});
     
+    // Announcement Delete api
+    app.delete("/auctions/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+
+      const result = await auctionCollection.deleteOne(filter);
+      res.send(result);
+    });
+
+
+
+    // Get top bidders 
+    app.get("/live-bid/top", async (req, res) => {
+      const { auctionId } = req.query;
+      const query = auctionId ? { auctionId } : {};
+
+      const result = await SpecificUserLiveBiddingCollection
+        .aggregate([
+          { $match: query },
+          {
+            $group: {
+              _id: "$email", // Group by user email
+              name: { $first: "$name" },
+              photo: { $first: "$photo" },
+              amount: { $max: "$amount" }, // Take the highest bid
+              auctionId: { $first: "$auctionId" },
+            }
+          },
+          { $sort: { amount: -1 } }, // Sort by amount in descending order
+          { $limit: 3 } // Limit to top 3 unique bidders
+        ])
+        .toArray();
+      res.send(result);
+    });
+
+    // Get recent activity 
+    app.get("/live-bid/recent", async (req, res) => {
+      const { auctionId } = req.query;
+      const query = auctionId ? { auctionId } : {};
+
+      const result = await SpecificUserLiveBiddingCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .limit(3)
+        .toArray();
+      res.send(result);
+    });
+
+    // Post a new bid 
+    app.post("/live-bid", async (req, res) => {
+      const liveBid = req.body;
+      liveBid.createdAt = new Date();
+      const result = await SpecificUserLiveBiddingCollection.insertOne(liveBid);
+
+      // Update the auction's current bid
+      await auctionCollection.updateOne(
+        { _id: liveBid.auctionId },
+        { $set: { currentBid: liveBid.amount } }
+      );
+
+      res.send(result);
+    });
+
   } finally {
     // await client.close();
   }
