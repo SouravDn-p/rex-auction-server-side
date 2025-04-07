@@ -8,7 +8,7 @@ const port = process.env.PORT || 5000;
 const app = express();
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
     credentials: true,
   })
 );
@@ -243,9 +243,7 @@ async function run() {
     // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
-      console.log(userId);
       const { accountBalance } = req.body;
-      console.log(accountBalance);
 
       if (!accountBalance) {
         return res
@@ -259,7 +257,6 @@ async function run() {
       );
 
       if (updatedUser.modifiedCount > 0) {
-        console.log(updatedUser);
         res.send({
           success: true,
           message: "User accountBalance updated successfully!",
