@@ -198,6 +198,30 @@ async function run() {
     });
 
     // Chat API Endpoints
+    // Fetch user by email (ensure photoURL is included)
+    app.get("/users/email/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      try {
+        const user = await userCollection.findOne({ email });
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+        res.send(user); // Ensure user includes photoURL
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        res.status(500).send({ message: "Failed to fetch user" });
+      }
+    });
+    // / Fetch all users
+    app.get("/users", verifyToken, async (req, res) => {
+      try {
+        const users = await userCollection.find().toArray();
+        res.send(users);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        res.status(500).send({ message: "Failed to fetch users" });
+      }
+    });
     app.get("/messages/email/:userEmail/:selectedUserEmail", verifyToken, async (req, res) => {
       const { userEmail, selectedUserEmail } = req.params;
       const { since } = req.query;
