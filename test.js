@@ -8,7 +8,7 @@ const port = process.env.PORT || 5000;
 const app = express();
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
     credentials: true,
   })
 );
@@ -155,7 +155,7 @@ async function run() {
     // Seller Request info save in db
     app.post("/become_seller", async (req, res) => {
       const requestData = req.body;
-      console.log(requestData);
+      // console.log(requestData);
       const result = await SellerRequestCollection.insertOne(requestData);
       res.send({ success: true, result });
     });
@@ -215,7 +215,6 @@ async function run() {
     });
 
     // Specific user role update
-
     app.patch("/users/:id", async (req, res) => {
       const userId = req.params.id;
       const { role } = req.body;
@@ -240,6 +239,36 @@ async function run() {
         });
       }
     });
+
+    // Specific user.accountBalance update
+    app.patch("/accountBalance/:id", async (req, res) => {
+      const userId = req.params.id;
+      const { accountBalance } = req.body;
+
+      if (!accountBalance) {
+        return res
+          .status(400)
+          .send({ success: false, message: "accountBalance is required!" });
+      }
+
+      const updatedUser = await userCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $set: { accountBalance } }
+      );
+
+      if (updatedUser.modifiedCount > 0) {
+        res.send({
+          success: true,
+          message: "User accountBalance updated successfully!",
+        });
+      } else {
+        res.status(404).send({
+          success: false,
+          message: "User not found or accountBalance not changed!",
+        });
+      }
+    });
+
     app.patch("/sellerRequest/:id", async (req, res) => {
       const userId = req.params.id;
       const { becomeSellerStatus } = req.body;
