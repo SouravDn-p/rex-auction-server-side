@@ -54,160 +54,176 @@ async function run() {
     const messagesCollection = db.collection("messages")
 
     // JWT Middleware
-    const verifyToken = (req, res, next) => {
-      const token = req?.cookies?.token || req.headers["authorization"]?.split(" ")[1]
-      if (!token) return res.status(401).send({ message: "Unauthorized access" })
-      jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
-        if (err) return res.status(401).send({ message: "Unauthorized access" })
-        req.decodedUser = decoded
-        next()
-      })
-    }
+     const verifyToken = (req, res, next) => {
+       const token = req?.cookies?.token || req.headers["authorization"]?.split(" ")[1]
+       if (!token) return res.status(401).send({ message: "Unauthorized access" })
+       jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+         if (err) return res.status(401).send({ message: "Unauthorized access" })
+         req.decodedUser = decoded
+         next()
+       })
+     }
+ 
+     // Verify Admin Middleware
+     const verifyAdmin = async (req, res, next) => {
+       const email = req.decodedUser.email
+       const query = { email: email }
+       const user = await userCollection.findOne(query)
+       const isAdmin = user?.role === "admin"
+       if (!isAdmin) return res.status(401).send({ message: "Unauthorized request" })
+       next()
+     }
+ 
+     // Verify Seller Middleware
+     const verifySeller = async (req, res, next) => {
+       const email = req.decodedUser.email
+       const query = { email: email }
+       const user = await userCollection.findOne(query)
+       const isSeller = user?.role === "seller"
+       if (!isSeller) return res.status(401).send({ message: "Unauthorized request" })
+       next()
+     }
+ 
 
-    // Verify Admin Middleware
-    const verifyAdmin = async (req, res, next) => {
-      const email = req.decodedUser.email
-      const query = { email: email }
-      const user = await userCollection.findOne(query)
-      const isAdmin = user?.role === "admin"
-      if (!isAdmin) return res.status(401).send({ message: "Unauthorized request" })
-      next()
-    }
 
-    // Verify Seller Middleware
-    const verifySeller = async (req, res, next) => {
-      const email = req.decodedUser.email
-      const query = { email: email }
-      const user = await userCollection.findOne(query)
-      const isSeller = user?.role === "seller"
-      if (!isSeller) return res.status(401).send({ message: "Unauthorized request" })
-      next()
-    }
+ 
 
     // Socket.IO Logic for Chat (Email-based)
     io.on("connection", (socket) => {
-      console.log("New client connected:", socket.id)
+      console.log("New client connected:", socket.id);
 
-  
-      const joinedRooms = new Set()
+      const joinedRooms = new Set();
 
       // Send immediate connection acknowledgment
       socket.emit("connection_ack", {
         id: socket.id,
         status: "connected",
         timestamp: new Date(),
-      })
+      });
 
       socket.on("joinChat", ({ userId, selectedUserId, roomId }) => {
-   
         joinedRooms.forEach((room) => {
-          socket.leave(room)
-          console.log(`${socket.id} left room ${room}`)
-        })
-        joinedRooms.clear()
+          socket.leave(room);
+          console.log(`${socket.id} left room ${room}`);
+        });
+        joinedRooms.clear();
 
-        // Join the new chat room
         if (roomId) {
-          socket.join(roomId)
-          joinedRooms.add(roomId)
-          console.log(`${socket.id} (${userId}) joined chat room ${roomId}`)
+          socket.join(roomId);
+          joinedRooms.add(roomId);
+          console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
         } else {
-     
-          const chatId = [userId, selectedUserId].sort().join("_")
-          socket.join(chatId)
-          joinedRooms.add(chatId)
-          console.log(`${socket.id} (${userId}) joined chat ${chatId}`)
+          const chatId = [userId, selectedUserId].sort().join("_");
+          socket.join(chatId);
+          joinedRooms.add(chatId);
+          console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
         }
 
-        // Also join a personal room for direct messages
-        const personalRoom = `user:${userId}`
-        socket.join(personalRoom)
-        joinedRooms.add(personalRoom)
-        console.log(`${socket.id} joined personal room ${personalRoom}`)
+        const personalRoom = `user:${userId}`;
+        socket.join(personalRoom);
+        joinedRooms.add(personalRoom);
+        console.log(`${socket.id} joined personal room ${personalRoom}`);
 
-        // Send acknowledgment
         socket.emit("joinedRoom", {
           room: roomId || [userId, selectedUserId].sort().join("_"),
           personalRoom,
           status: "joined",
-        })
-      })
+        });
+      });
 
       socket.on("leaveAllRooms", () => {
         joinedRooms.forEach((room) => {
-          socket.leave(room)
-          console.log(`${socket.id} left room ${room}`)
-        })
-        joinedRooms.clear()
-        socket.emit("leftRooms", { status: "success" })
-      })
+          socket.leave(room);
+          console.log(`${socket.id} left room ${room}`);
+        });
+        joinedRooms.clear();
+        socket.emit("leftRooms", { status: "success" });
+      });
 
       socket.on("sendMessage", async (messageData, callback) => {
         try {
-          const { senderId, receiverId, text, roomId } = messageData
+          const { senderId, receiverId, text, roomId } = messageData;
 
-          const chatId = roomId || [senderId, receiverId].sort().join("_")
+          const chatId = roomId || [senderId, receiverId].sort().join("_");
+
+          // Generate a unique message ID
+          const messageId = new ObjectId().toString();
 
           const message = {
+            messageId,
             senderId,
             receiverId,
             text,
             createdAt: new Date(),
+          };
+
+          // Check if the message already exists
+          const existingMessage = await messagesCollection.findOne({
+            messageId: message.messageId,
+          });
+
+          if (existingMessage) {
+            if (callback) callback({ success: false, error: "Message already exists" });
+            return;
           }
 
           // Save to database
-          const result = await messagesCollection.insertOne(message)
+          const result = await messagesCollection.insertOne(message);
 
           if (result.acknowledged) {
-          
-            io.to(chatId).emit("receiveMessage", message)
-
-          
-            io.to(`user:${receiverId}`).emit("receiveMessage", message)
+            // Emit to the chat room (both users)
+            io.to(chatId).emit("receiveMessage", message);
 
             // Send acknowledgement back to sender
-            if (callback) callback({ success: true, messageId: result.insertedId })
+            if (callback) callback({ success: true, messageId: result.insertedId });
 
-            console.log(`Message sent to room ${chatId}: ${text.substring(0, 20)}...`)
+            console.log(`Message sent to room ${chatId}: ${text.substring(0, 20)}...`);
           } else {
-            if (callback) callback({ success: false, error: "Failed to save message" })
+            if (callback) callback({ success: false, error: "Failed to save message" });
           }
         } catch (error) {
-          console.error("Error sending message:", error)
-          if (callback) callback({ success: false, error: error.message })
+          console.error("Error sending message:", error);
+          if (callback) callback({ success: false, error: error.message });
         }
-      })
+      });
 
       socket.on("ping", (callback) => {
-        if (callback) callback({ time: new Date(), status: "active" })
-      })
+        if (callback) callback({ time: new Date(), status: "active" });
+      });
 
       socket.on("disconnect", () => {
-        console.log("Client disconnected:", socket.id)
-        joinedRooms.clear()
-      })
-    })
+        console.log("Client disconnected:", socket.id);
+        joinedRooms.clear();
+      });
+    });
 
     // Chat API Endpoints
-    // Fetch messages by user emails
     app.get("/messages/email/:userEmail/:selectedUserEmail", verifyToken, async (req, res) => {
-      const { userEmail, selectedUserEmail } = req.params
+      const { userEmail, selectedUserEmail } = req.params;
+      const { since } = req.query;
+
       try {
+        const query = {
+          $or: [
+            { senderId: userEmail, receiverId: selectedUserEmail },
+            { senderId: selectedUserEmail, receiverId: userEmail },
+          ],
+        };
+
+        if (since) {
+          query.createdAt = { $gt: new Date(since) };
+        }
+
         const messages = await messagesCollection
-          .find({
-            $or: [
-              { senderId: userEmail, receiverId: selectedUserEmail },
-              { senderId: selectedUserEmail, receiverId: userEmail },
-            ],
-          })
+          .find(query)
           .sort({ createdAt: 1 })
-          .toArray()
-        res.send(messages)
+          .toArray();
+        res.send(messages);
       } catch (error) {
-        console.error("Error fetching messages by email:", error)
-        res.status(500).send({ message: "Failed to fetch messages" })
+        console.error("Error fetching messages by email:", error);
+        res.status(500).send({ message: "Failed to fetch messages" });
       }
-    })
+    });
 
     // Socket connection test endpoint
     app.get("/socket-test", (req, res) => {
@@ -215,9 +231,9 @@ async function run() {
         status: "Socket.IO server running",
         connections: io.engine.clientsCount,
         uptime: process.uptime(),
-      })
-    })
-
+      });
+    });
+    
     // JWT Routes
     app.post("/jwt", async (req, res) => {
       const user = req.body
