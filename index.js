@@ -143,7 +143,7 @@ async function run() {
         try {
           const { senderId, receiverId, text, roomId } = messageData;
           const chatId = roomId || [senderId, receiverId].sort().join("_");
-      
+
           const messageId = new ObjectId().toString();
           const message = {
             messageId,
@@ -152,30 +152,35 @@ async function run() {
             text,
             createdAt: new Date(),
           };
-      
+
           const existingMessage = await messagesCollection.findOne({
             messageId: message.messageId,
           });
-      
+
           if (existingMessage) {
-            if (callback) callback({ success: false, error: "Message already exists" });
+            if (callback)
+              callback({ success: false, error: "Message already exists" });
             return;
           }
-      
+
           const result = await messagesCollection.insertOne(message);
-      
+
           if (result.acknowledged) {
             // Emit to the chat room
             io.to(chatId).emit("receiveMessage", message);
-      
+
             // Emit to sender's and receiver's personal rooms for sidebar updates
             io.to(`user:${senderId}`).emit("receiveMessage", message);
             io.to(`user:${receiverId}`).emit("receiveMessage", message);
-      
-            if (callback) callback({ success: true, messageId: result.insertedId });
-            console.log(`Message sent to room ${chatId}: ${text.substring(0, 20)}...`);
+
+            if (callback)
+              callback({ success: true, messageId: result.insertedId });
+            console.log(
+              `Message sent to room ${chatId}: ${text.substring(0, 20)}...`
+            );
           } else {
-            if (callback) callback({ success: false, error: "Failed to save message" });
+            if (callback)
+              callback({ success: false, error: "Failed to save message" });
           }
         } catch (error) {
           console.error("Error sending message:", error);
@@ -193,9 +198,12 @@ async function run() {
     });
 
     // Chat API Endpoints
-    app.get("/messages/email/:userEmail/:selectedUserEmail", verifyToken, async (req, res) => {
-      const { userEmail, selectedUserEmail } = req.params;
-      const { since } = req.query;
+    app.get(
+      "/messages/email/:userEmail/:selectedUserEmail",
+      verifyToken,
+      async (req, res) => {
+        const { userEmail, selectedUserEmail } = req.params;
+        const { since } = req.query;
 
         try {
           const query = {
@@ -220,50 +228,50 @@ async function run() {
         }
       }
     );
-// Fetch the most recent message for each user the current user has interacted with
-app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
-  const { userEmail } = req.params;
-  try {
-    const recentMessages = await messagesCollection
-      .aggregate([
-        // Match messages involving the current user
-        {
-          $match: {
-            $or: [{ senderId: userEmail }, { receiverId: userEmail }],
-          },
-        },
-        // Sort by createdAt to get the most recent message first
-        { $sort: { createdAt: -1 } },
-        // Group by the other user's email (sender or receiver)
-        {
-          $group: {
-            _id: {
-              $cond: [
-                { $eq: ["$senderId", userEmail] },
-                "$receiverId",
-                "$senderId",
-              ],
+    // Fetch the most recent message for each user the current user has interacted with
+    app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
+      const { userEmail } = req.params;
+      try {
+        const recentMessages = await messagesCollection
+          .aggregate([
+            // Match messages involving the current user
+            {
+              $match: {
+                $or: [{ senderId: userEmail }, { receiverId: userEmail }],
+              },
             },
-            lastMessage: { $first: "$$ROOT" },
-          },
-        },
-        // Project the required fields
-        {
-          $project: {
-            userEmail: "$_id",
-            lastMessage: 1,
-            _id: 0,
-          },
-        },
-      ])
-      .toArray();
+            // Sort by createdAt to get the most recent message first
+            { $sort: { createdAt: -1 } },
+            // Group by the other user's email (sender or receiver)
+            {
+              $group: {
+                _id: {
+                  $cond: [
+                    { $eq: ["$senderId", userEmail] },
+                    "$receiverId",
+                    "$senderId",
+                  ],
+                },
+                lastMessage: { $first: "$$ROOT" },
+              },
+            },
+            // Project the required fields
+            {
+              $project: {
+                userEmail: "$_id",
+                lastMessage: 1,
+                _id: 0,
+              },
+            },
+          ])
+          .toArray();
 
-    res.send(recentMessages);
-  } catch (error) {
-    console.error("Error fetching recent messages:", error);
-    res.status(500).send({ message: "Failed to fetch recent messages" });
-  }
-});
+        res.send(recentMessages);
+      } catch (error) {
+        console.error("Error fetching recent messages:", error);
+        res.status(500).send({ message: "Failed to fetch recent messages" });
+      }
+    });
     // Socket connection test endpoint
     app.get("/socket-test", (req, res) => {
       res.json({
@@ -585,6 +593,35 @@ app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
       const reports = req.body;
       const result = await reportsCollection.insertOne(reports);
       res.send({ success: true, result });
+    });
+    // GET a report(Joyeta)
+    app.get("/reports", async (req, res) => {
+      try {
+        const reports = await reportCollection.find().toArray();
+        res.send(reports);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Failed to fetch reports", error: error.message });
+      }
+    });
+
+    // POST a report (Joyeta)
+    app.post("/reports", async (req, res) => {
+      try {
+        const report = req.body;
+
+        if (!report || Object.keys(report).length === 0) {
+          return res.status(400).send({ message: "Report data is required" });
+        }
+
+        const result = await reportCollection.insertOne(report);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Failed to submit report", error: error.message });
+      }
     });
 
     // Debug endpoint to check active socket connections
