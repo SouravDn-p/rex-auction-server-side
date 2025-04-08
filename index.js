@@ -142,12 +142,9 @@ async function run() {
       socket.on("sendMessage", async (messageData, callback) => {
         try {
           const { senderId, receiverId, text, roomId } = messageData;
-
           const chatId = roomId || [senderId, receiverId].sort().join("_");
-
-          // Generate a unique message ID
+      
           const messageId = new ObjectId().toString();
-
           const message = {
             messageId,
             senderId,
@@ -155,42 +152,36 @@ async function run() {
             text,
             createdAt: new Date(),
           };
-
-          // Check if the message already exists
+      
           const existingMessage = await messagesCollection.findOne({
             messageId: message.messageId,
           });
-
+      
           if (existingMessage) {
-            if (callback)
-              callback({ success: false, error: "Message already exists" });
+            if (callback) callback({ success: false, error: "Message already exists" });
             return;
           }
-
-          // Save to database
+      
           const result = await messagesCollection.insertOne(message);
-
+      
           if (result.acknowledged) {
-            // Emit to the chat room (both users)
+            // Emit to the chat room
             io.to(chatId).emit("receiveMessage", message);
-
-            // Send acknowledgement back to sender
-            if (callback)
-              callback({ success: true, messageId: result.insertedId });
-
-            console.log(
-              `Message sent to room ${chatId}: ${text.substring(0, 20)}...`
-            );
+      
+            // Emit to sender's and receiver's personal rooms for sidebar updates
+            io.to(`user:${senderId}`).emit("receiveMessage", message);
+            io.to(`user:${receiverId}`).emit("receiveMessage", message);
+      
+            if (callback) callback({ success: true, messageId: result.insertedId });
+            console.log(`Message sent to room ${chatId}: ${text.substring(0, 20)}...`);
           } else {
-            if (callback)
-              callback({ success: false, error: "Failed to save message" });
+            if (callback) callback({ success: false, error: "Failed to save message" });
           }
         } catch (error) {
           console.error("Error sending message:", error);
           if (callback) callback({ success: false, error: error.message });
         }
       });
-
       socket.on("ping", (callback) => {
         if (callback) callback({ time: new Date(), status: "active" });
       });
@@ -202,12 +193,9 @@ async function run() {
     });
 
     // Chat API Endpoints
-    app.get(
-      "/messages/email/:userEmail/:selectedUserEmail",
-      verifyToken,
-      async (req, res) => {
-        const { userEmail, selectedUserEmail } = req.params;
-        const { since } = req.query;
+    app.get("/messages/email/:userEmail/:selectedUserEmail", verifyToken, async (req, res) => {
+      const { userEmail, selectedUserEmail } = req.params;
+      const { since } = req.query;
 
         try {
           const query = {
@@ -232,7 +220,50 @@ async function run() {
         }
       }
     );
+// Fetch the most recent message for each user the current user has interacted with
+app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
+  const { userEmail } = req.params;
+  try {
+    const recentMessages = await messagesCollection
+      .aggregate([
+        // Match messages involving the current user
+        {
+          $match: {
+            $or: [{ senderId: userEmail }, { receiverId: userEmail }],
+          },
+        },
+        // Sort by createdAt to get the most recent message first
+        { $sort: { createdAt: -1 } },
+        // Group by the other user's email (sender or receiver)
+        {
+          $group: {
+            _id: {
+              $cond: [
+                { $eq: ["$senderId", userEmail] },
+                "$receiverId",
+                "$senderId",
+              ],
+            },
+            lastMessage: { $first: "$$ROOT" },
+          },
+        },
+        // Project the required fields
+        {
+          $project: {
+            userEmail: "$_id",
+            lastMessage: 1,
+            _id: 0,
+          },
+        },
+      ])
+      .toArray();
 
+    res.send(recentMessages);
+  } catch (error) {
+    console.error("Error fetching recent messages:", error);
+    res.status(500).send({ message: "Failed to fetch recent messages" });
+  }
+});
     // Socket connection test endpoint
     app.get("/socket-test", (req, res) => {
       res.json({
