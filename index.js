@@ -12,7 +12,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -21,7 +21,7 @@ const io = new Server(server, {
 
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
     credentials: true,
   })
 );
@@ -89,7 +89,7 @@ async function run() {
 
     // Socket.IO Logic for Chat (Email-based)
     io.on("connection", (socket) => {
-      console.log("New client connected:", socket.id);
+      // console.log("New client connected:", socket.id);
 
       const joinedRooms = new Set();
 
@@ -103,25 +103,25 @@ async function run() {
       socket.on("joinChat", ({ userId, selectedUserId, roomId }) => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-          console.log(`${socket.id} left room ${room}`);
+          // console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
 
         if (roomId) {
           socket.join(roomId);
           joinedRooms.add(roomId);
-          console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
+          // console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
         } else {
           const chatId = [userId, selectedUserId].sort().join("_");
           socket.join(chatId);
           joinedRooms.add(chatId);
-          console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
+          // console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
         }
 
         const personalRoom = `user:${userId}`;
         socket.join(personalRoom);
         joinedRooms.add(personalRoom);
-        console.log(`${socket.id} joined personal room ${personalRoom}`);
+        // console.log(`${socket.id} joined personal room ${personalRoom}`);
 
         socket.emit("joinedRoom", {
           room: roomId || [userId, selectedUserId].sort().join("_"),
@@ -133,7 +133,7 @@ async function run() {
       socket.on("leaveAllRooms", () => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-          console.log(`${socket.id} left room ${room}`);
+          // console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
         socket.emit("leftRooms", { status: "success" });
@@ -192,7 +192,7 @@ async function run() {
       });
 
       socket.on("disconnect", () => {
-        console.log("Client disconnected:", socket.id);
+        // console.log("Client disconnected:", socket.id);
         joinedRooms.clear();
       });
     });
@@ -558,11 +558,12 @@ async function run() {
             name: { $first: "$name" },
             photo: { $first: "$photo" },
             amount: { $max: "$amount" },
+            email: { $max: "$email" },  
             auctionId: { $first: "$auctionId" },
           },
         },
         { $sort: { amount: -1 } },
-        { $limit: 3 },
+        // { $limit: 3 },
       ]).toArray();
       res.send(result);
     });

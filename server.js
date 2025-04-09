@@ -12,7 +12,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -21,7 +21,7 @@ const io = new Server(server, {
 
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
     credentials: true,
   })
 );
@@ -103,25 +103,25 @@ async function run() {
       socket.on("joinChat", ({ userId, selectedUserId, roomId }) => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-          console.log(`${socket.id} left room ${room}`);
+          // console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
 
         if (roomId) {
           socket.join(roomId);
           joinedRooms.add(roomId);
-          console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
+          // console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
         } else {
           const chatId = [userId, selectedUserId].sort().join("_");
           socket.join(chatId);
           joinedRooms.add(chatId);
-          console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
+          // console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
         }
 
         const personalRoom = `user:${userId}`;
         socket.join(personalRoom);
         joinedRooms.add(personalRoom);
-        console.log(`${socket.id} joined personal room ${personalRoom}`);
+        // console.log(`${socket.id} joined personal room ${personalRoom}`);
 
         socket.emit("joinedRoom", {
           room: roomId || [userId, selectedUserId].sort().join("_"),
@@ -133,7 +133,7 @@ async function run() {
       socket.on("leaveAllRooms", () => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-          console.log(`${socket.id} left room ${room}`);
+          // console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
         socket.emit("leftRooms", { status: "success" });
@@ -142,12 +142,9 @@ async function run() {
       socket.on("sendMessage", async (messageData, callback) => {
         try {
           const { senderId, receiverId, text, roomId } = messageData;
-
           const chatId = roomId || [senderId, receiverId].sort().join("_");
 
-          // Generate a unique message ID
           const messageId = new ObjectId().toString();
-
           const message = {
             messageId,
             senderId,
@@ -156,7 +153,6 @@ async function run() {
             createdAt: new Date(),
           };
 
-          // Check if the message already exists
           const existingMessage = await messagesCollection.findOne({
             messageId: message.messageId,
           });
@@ -167,17 +163,18 @@ async function run() {
             return;
           }
 
-          // Save to database
           const result = await messagesCollection.insertOne(message);
 
           if (result.acknowledged) {
-            // Emit to the chat room (both users)
+            // Emit to the chat room
             io.to(chatId).emit("receiveMessage", message);
 
-            // Send acknowledgement back to sender
+            // Emit to sender's and receiver's personal rooms for sidebar updates
+            io.to(`user:${senderId}`).emit("receiveMessage", message);
+            io.to(`user:${receiverId}`).emit("receiveMessage", message);
+
             if (callback)
               callback({ success: true, messageId: result.insertedId });
-
             console.log(
               `Message sent to room ${chatId}: ${text.substring(0, 20)}...`
             );
@@ -190,7 +187,6 @@ async function run() {
           if (callback) callback({ success: false, error: error.message });
         }
       });
-
       socket.on("ping", (callback) => {
         if (callback) callback({ time: new Date(), status: "active" });
       });
@@ -232,7 +228,50 @@ async function run() {
         }
       }
     );
+    // Fetch the most recent message for each user the current user has interacted with
+    app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
+      const { userEmail } = req.params;
+      try {
+        const recentMessages = await messagesCollection
+          .aggregate([
+            // Match messages involving the current user
+            {
+              $match: {
+                $or: [{ senderId: userEmail }, { receiverId: userEmail }],
+              },
+            },
+            // Sort by createdAt to get the most recent message first
+            { $sort: { createdAt: -1 } },
+            // Group by the other user's email (sender or receiver)
+            {
+              $group: {
+                _id: {
+                  $cond: [
+                    { $eq: ["$senderId", userEmail] },
+                    "$receiverId",
+                    "$senderId",
+                  ],
+                },
+                lastMessage: { $first: "$$ROOT" },
+              },
+            },
+            // Project the required fields
+            {
+              $project: {
+                userEmail: "$_id",
+                lastMessage: 1,
+                _id: 0,
+              },
+            },
+          ])
+          .toArray();
 
+        res.send(recentMessages);
+      } catch (error) {
+        console.error("Error fetching recent messages:", error);
+        res.status(500).send({ message: "Failed to fetch recent messages" });
+      }
+    });
     // Socket connection test endpoint
     app.get("/socket-test", (req, res) => {
       res.json({
@@ -478,6 +517,35 @@ async function run() {
       res.send(result);
     });
 
+    // Specific user.accountBalance update
+    app.patch("/accountBalance/:id", async (req, res) => {
+      const userId = req.params.id;
+      const { accountBalance } = req.body;
+
+      if (!accountBalance) {
+        return res
+          .status(400)
+          .send({ success: false, message: "accountBalance is required!" });
+      }
+
+      const updatedUser = await userCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $set: { accountBalance } }
+      );
+
+      if (updatedUser.modifiedCount > 0) {
+        res.send({
+          success: true,
+          message: "User accountBalance updated successfully!",
+        });
+      } else {
+        res.status(404).send({
+          success: false,
+          message: "User not found or accountBalance not changed!",
+        });
+      }
+    });
+
     // Live Bidding APIs
     app.get("/live-bid/top", async (req, res) => {
       const { auctionId } = req.query;
@@ -525,6 +593,35 @@ async function run() {
       const reports = req.body;
       const result = await reportsCollection.insertOne(reports);
       res.send({ success: true, result });
+    });
+    // GET a report(Joyeta)
+    app.get("/reports", async (req, res) => {
+      try {
+        const reports = await reportCollection.find().toArray();
+        res.send(reports);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Failed to fetch reports", error: error.message });
+      }
+    });
+
+    // POST a report (Joyeta)
+    app.post("/reports", async (req, res) => {
+      try {
+        const report = req.body;
+
+        if (!report || Object.keys(report).length === 0) {
+          return res.status(400).send({ message: "Report data is required" });
+        }
+
+        const result = await reportCollection.insertOne(report);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Failed to submit report", error: error.message });
+      }
     });
 
     // Debug endpoint to check active socket connections
