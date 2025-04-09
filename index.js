@@ -12,7 +12,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
+    origin: ["http://localhost:5173"],
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -21,7 +21,7 @@ const io = new Server(server, {
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
+    origin: ["http://localhost:5173"],
     credentials: true,
   })
 );
@@ -89,11 +89,11 @@ async function run() {
 
     // Socket.IO Logic for Chat (Email-based)
     io.on("connection", (socket) => {
-   
+      console.log("New client connected:", socket.id);
 
       const joinedRooms = new Set();
 
-
+      // Send immediate connection acknowledgment
       socket.emit("connection_ack", {
         id: socket.id,
         status: "connected",
@@ -103,25 +103,25 @@ async function run() {
       socket.on("joinChat", ({ userId, selectedUserId, roomId }) => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-       
+          console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
 
         if (roomId) {
           socket.join(roomId);
           joinedRooms.add(roomId);
-    
+          console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
         } else {
           const chatId = [userId, selectedUserId].sort().join("_");
           socket.join(chatId);
           joinedRooms.add(chatId);
-          // console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
+          console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
         }
 
         const personalRoom = `user:${userId}`;
         socket.join(personalRoom);
         joinedRooms.add(personalRoom);
-        // console.log(`${socket.id} joined personal room ${personalRoom}`);
+        console.log(`${socket.id} joined personal room ${personalRoom}`);
 
         socket.emit("joinedRoom", {
           room: roomId || [userId, selectedUserId].sort().join("_"),
@@ -133,7 +133,7 @@ async function run() {
       socket.on("leaveAllRooms", () => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-          // console.log(`${socket.id} left room ${room}`);
+          console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
         socket.emit("leftRooms", { status: "success" });
@@ -192,7 +192,7 @@ async function run() {
       });
 
       socket.on("disconnect", () => {
-        // console.log("Client disconnected:", socket.id);
+        console.log("Client disconnected:", socket.id);
         joinedRooms.clear();
       });
     });
@@ -280,6 +280,57 @@ async function run() {
         uptime: process.uptime(),
       });
     });
+
+
+    // Socket.IO Logic for Auction Bidding
+    module.exports = (io) => {
+      io.on("connection", (socket) => {
+        console.log("New client connected:", socket.id)
+
+        // Send immediate connection acknowledgment
+        socket.emit("connection_ack", {
+          id: socket.id, 
+      status: "connected",
+          timestamp: new Date(),
+        })
+
+        // Join auction room
+        socket.on("joinAuction", ({ auctionId }) => {
+          if (auctionId) {
+            socket.join(`auction:${auctionId}`)
+            console.log(`${socket.id} joined auction room: auction:${auctionId}`)
+          }
+        })
+
+        // Leave auction room
+        socket.on("leaveAuction", ({ auctionId }) => {
+          if (auctionId) {
+            socket.leave(`auction:${auctionId}`)
+            console.log(`${socket.id} left auction room: auction:${auctionId}`)
+          }
+        })
+
+        // Handle new bids
+        socket.on("placeBid", async (bidData) => {
+          try {
+            console.log(`New bid received from ${socket.id}:`, bidData)
+
+            // Broadcast the new bid to all clients in the auction room
+            io.to(`auction:${bidData.auctionId}`).emit("newBid", bidData)
+
+            console.log(`Bid broadcast to auction:${bidData.auctionId}`)
+          } catch (error) {
+            console.error("Error handling bid:", error)
+            socket.emit("bidError", { message: "Failed to process bid" })
+          }
+        })
+
+        socket.on("disconnect", () => {
+          console.log("Client disconnected:", socket.id)
+        })
+      })
+    }
+
 
     // JWT Routes
     app.post("/jwt", async (req, res) => {
@@ -558,12 +609,11 @@ async function run() {
             name: { $first: "$name" },
             photo: { $first: "$photo" },
             amount: { $max: "$amount" },
-            email: { $max: "$email" },  
             auctionId: { $first: "$auctionId" },
           },
         },
         { $sort: { amount: -1 } },
-        // { $limit: 3 },
+        { $limit: 3 },
       ]).toArray();
       res.send(result);
     });
