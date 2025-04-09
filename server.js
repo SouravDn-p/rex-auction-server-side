@@ -89,11 +89,8 @@ async function run() {
 
     // Socket.IO Logic for Chat (Email-based)
     io.on("connection", (socket) => {
-      console.log("New client connected:", socket.id);
-
       const joinedRooms = new Set();
 
-      // Send immediate connection acknowledgment
       socket.emit("connection_ack", {
         id: socket.id,
         status: "connected",
@@ -103,14 +100,12 @@ async function run() {
       socket.on("joinChat", ({ userId, selectedUserId, roomId }) => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-          // console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
 
         if (roomId) {
           socket.join(roomId);
           joinedRooms.add(roomId);
-          // console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
         } else {
           const chatId = [userId, selectedUserId].sort().join("_");
           socket.join(chatId);
@@ -192,7 +187,7 @@ async function run() {
       });
 
       socket.on("disconnect", () => {
-        console.log("Client disconnected:", socket.id);
+        // console.log("Client disconnected:", socket.id);
         joinedRooms.clear();
       });
     });
@@ -558,11 +553,12 @@ async function run() {
             name: { $first: "$name" },
             photo: { $first: "$photo" },
             amount: { $max: "$amount" },
+            email: { $max: "$email" },
             auctionId: { $first: "$auctionId" },
           },
         },
         { $sort: { amount: -1 } },
-        { $limit: 3 },
+        // { $limit: 3 },
       ]).toArray();
       res.send(result);
     });

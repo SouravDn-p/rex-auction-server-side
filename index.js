@@ -281,56 +281,56 @@ async function run() {
       });
     });
 
-
     // Socket.IO Logic for Auction Bidding
     module.exports = (io) => {
       io.on("connection", (socket) => {
-        console.log("New client connected:", socket.id)
+        console.log("New client connected:", socket.id);
 
         // Send immediate connection acknowledgment
         socket.emit("connection_ack", {
-          id: socket.id, 
-      status: "connected",
+          id: socket.id,
+          status: "connected",
           timestamp: new Date(),
-        })
+        });
 
         // Join auction room
         socket.on("joinAuction", ({ auctionId }) => {
           if (auctionId) {
-            socket.join(`auction:${auctionId}`)
-            console.log(`${socket.id} joined auction room: auction:${auctionId}`)
+            socket.join(`auction:${auctionId}`);
+            console.log(
+              `${socket.id} joined auction room: auction:${auctionId}`
+            );
           }
-        })
+        });
 
         // Leave auction room
         socket.on("leaveAuction", ({ auctionId }) => {
           if (auctionId) {
-            socket.leave(`auction:${auctionId}`)
-            console.log(`${socket.id} left auction room: auction:${auctionId}`)
+            socket.leave(`auction:${auctionId}`);
+            console.log(`${socket.id} left auction room: auction:${auctionId}`);
           }
-        })
+        });
 
         // Handle new bids
         socket.on("placeBid", async (bidData) => {
           try {
-            console.log(`New bid received from ${socket.id}:`, bidData)
+            console.log(`New bid received from ${socket.id}:`, bidData);
 
             // Broadcast the new bid to all clients in the auction room
-            io.to(`auction:${bidData.auctionId}`).emit("newBid", bidData)
+            io.to(`auction:${bidData.auctionId}`).emit("newBid", bidData);
 
-            console.log(`Bid broadcast to auction:${bidData.auctionId}`)
+            console.log(`Bid broadcast to auction:${bidData.auctionId}`);
           } catch (error) {
-            console.error("Error handling bid:", error)
-            socket.emit("bidError", { message: "Failed to process bid" })
+            console.error("Error handling bid:", error);
+            socket.emit("bidError", { message: "Failed to process bid" });
           }
-        })
+        });
 
         socket.on("disconnect", () => {
-          console.log("Client disconnected:", socket.id)
-        })
-      })
-    }
-
+          console.log("Client disconnected:", socket.id);
+        });
+      });
+    };
 
     // JWT Routes
     app.post("/jwt", async (req, res) => {
@@ -566,6 +566,51 @@ async function run() {
       const filter = { _id: new ObjectId(id) };
       const result = await auctionCollection.deleteOne(filter);
       res.send(result);
+    });
+
+    //auction er top bidders update
+
+    app.patch("/auctionList/topBidders", async (req, res) => {
+      try {
+        const { topBidders } = req.body;
+
+        if (
+          !topBidders ||
+          !Array.isArray(topBidders) ||
+          topBidders.length === 0
+        ) {
+          return res
+            .status(400)
+            .send({ success: false, message: "Invalid topBidders data." });
+        }
+
+        const auctionId = topBidders[0]?.auctionId;
+
+        if (!auctionId) {
+          return res.status(400).send({
+            success: false,
+            message: "auctionId missing in topBidders.",
+          });
+        }
+
+        const filter = { _id: new ObjectId(auctionId) };
+        const updateDoc = {
+          $set: {
+            topBidders: topBidders,
+          },
+        };
+
+        const result = await auctionCollection.updateOne(filter, updateDoc);
+
+        res.send({
+          success: true,
+          message: "Top bidders updated successfully.",
+          result,
+        });
+      } catch (error) {
+        console.error("Error updating topBidders:", error);
+        res.status(500).send({ success: false, message: "Server error." });
+      }
     });
 
     // Specific user.accountBalance update
