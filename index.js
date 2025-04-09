@@ -89,11 +89,11 @@ async function run() {
 
     // Socket.IO Logic for Chat (Email-based)
     io.on("connection", (socket) => {
-      // console.log("New client connected:", socket.id);
+   
 
       const joinedRooms = new Set();
 
-      // Send immediate connection acknowledgment
+
       socket.emit("connection_ack", {
         id: socket.id,
         status: "connected",
@@ -103,14 +103,14 @@ async function run() {
       socket.on("joinChat", ({ userId, selectedUserId, roomId }) => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-          // console.log(`${socket.id} left room ${room}`);
+       
         });
         joinedRooms.clear();
 
         if (roomId) {
           socket.join(roomId);
           joinedRooms.add(roomId);
-          // console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
+    
         } else {
           const chatId = [userId, selectedUserId].sort().join("_");
           socket.join(chatId);
