@@ -50,6 +50,7 @@ async function run() {
     const SpecificUserLiveBiddingCollection = db.collection("liveBids");
     const reportsCollection = db.collection("reports");
     const messagesCollection = db.collection("messages");
+    const notificationsCollection = db.collection("notifications");
 
     // JWT Middleware
     const verifyToken = (req, res, next) => {
@@ -87,7 +88,7 @@ async function run() {
       next();
     };
 
-    // Socket.IO Logic for Chat (Email-based)
+    // Socket.IO Logic for Chat and Notifications
     io.on("connection", (socket) => {
       console.log("New client connected:", socket.id);
 
@@ -187,6 +188,41 @@ async function run() {
           if (callback) callback({ success: false, error: error.message });
         }
       });
+
+      // Handle sending notifications - FIXED: removed duplicate handler
+      socket.on("sendNotification", async (notificationData, callback) => {
+        try {
+          // Add a unique ID to the notification
+          const notificationId = new ObjectId().toString();
+          const notification = {
+            ...notificationData,
+            _id: notificationId,
+            createdAt: new Date(),
+          };
+
+          // Save notification to database
+          const result = await notificationsCollection.insertOne(notification);
+
+          if (result.acknowledged) {
+            // If recipient is specified, emit to that user's personal room
+            if (notification.recipient && notification.recipient !== "all") {
+              io.to(`user:${notification.recipient}`).emit("receiveNotification", notification);
+            } else {
+              // Otherwise broadcast to all connected clients
+              io.emit("receiveNotification", notification);
+            }
+
+            if (callback) callback({ success: true, notificationId });
+            console.log(`Notification sent: ${notification.title}`);
+          } else {
+            if (callback) callback({ success: false, error: "Failed to save notification" });
+          }
+        } catch (error) {
+          console.error("Error sending notification:", error);
+          if (callback) callback({ success: false, error: error.message });
+        }
+      });
+
       socket.on("ping", (callback) => {
         if (callback) callback({ time: new Date(), status: "active" });
       });
@@ -228,21 +264,22 @@ async function run() {
         }
       }
     );
-    // Fetch the most recent message for each user the current user has interacted with
+
+    // Fetch the most recent message
     app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
       const { userEmail } = req.params;
       try {
         const recentMessages = await messagesCollection
           .aggregate([
-            // Match messages involving the current user
+           
             {
               $match: {
                 $or: [{ senderId: userEmail }, { receiverId: userEmail }],
               },
             },
-            // Sort by createdAt to get the most recent message first
+        
             { $sort: { createdAt: -1 } },
-            // Group by the other user's email (sender or receiver)
+       
             {
               $group: {
                 _id: {
@@ -272,6 +309,7 @@ async function run() {
         res.status(500).send({ message: "Failed to fetch recent messages" });
       }
     });
+
     // Socket connection test endpoint
     app.get("/socket-test", (req, res) => {
       res.json({
@@ -281,12 +319,94 @@ async function run() {
       });
     });
 
+    // API endpoints for notifications - FIXED: moved inside run() function
+    app.get("/notifications/:userEmail", verifyToken, async (req, res) => {
+      const { userEmail } = req.params;
+      try {
+        const notifications = await notificationsCollection
+          .find({
+            $or: [{ recipient: userEmail }, { recipient: "all" }],
+          })
+          .sort({ createdAt: -1 })
+          .limit(50)
+          .toArray();
+
+        res.send(notifications);
+      } catch (error) {
+        console.error("Error fetching notifications:", error);
+        res.status(500).send({ message: "Failed to fetch notifications" });
+      }
+    });
+
+    app.put("/notifications/mark-read/:userEmail", verifyToken, async (req, res) => {
+      const { userEmail } = req.params;
+      try {
+        const result = await notificationsCollection.updateMany(
+          {
+            $or: [
+              { recipient: userEmail, read: false },
+              { recipient: "all", read: false },
+            ],
+          },
+          { $set: { read: true } }
+        );
+
+        res.send({ success: true, modifiedCount: result.modifiedCount });
+      } catch (error) {
+        console.error("Error marking notifications as read:", error);
+        res.status(500).send({ message: "Failed to mark notifications as read" });
+      }
+    });
+
+    app.post("/notifications", verifyToken, async (req, res) => {
+      try {
+        const notification = {
+          ...req.body,
+          _id: new ObjectId().toString(),
+          createdAt: new Date(),
+        };
+
+        const result = await notificationsCollection.insertOne(notification);
+
+        if (result.acknowledged) {
+          res.send({ success: true, notificationId: notification._id });
+        } else {
+          res.status(500).send({ success: false, message: "Failed to save notification" });
+        }
+      } catch (error) {
+        console.error("Error creating notification:", error);
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+    const viewNotificationDetails = (notification) => {
+     
+      setNotifications((prev) => prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n)));
+    
+   
+      if (notificationCount > 0) {
+        setNotificationCount((prev) => prev - 1);
+      }
+    
+      // Navigate based on notification type
+      if (notification.type === "auction" && notification.auctionData?._id) {
+        navigate(`/dashboard/auction-details/${notification.auctionData._id}`);
+      } else if (notification.type === "announcement") {
+       
+        navigate("/dashboard/announcement", {
+          state: {
+            notificationDetails: notification, 
+          },
+        });
+      }
+    
+      // Close notifications panel
+      setIsNotificationsOpen(false);
+    };
     // Socket.IO Logic for Auction Bidding
     module.exports = (io) => {
       io.on("connection", (socket) => {
         console.log("New client connected:", socket.id);
 
-        // Send immediate connection acknowledgment
         socket.emit("connection_ack", {
           id: socket.id,
           status: "connected",
@@ -316,7 +436,6 @@ async function run() {
           try {
             console.log(`New bid received from ${socket.id}:`, bidData);
 
-            // Broadcast the new bid to all clients in the auction room
             io.to(`auction:${bidData.auctionId}`).emit("newBid", bidData);
 
             console.log(`Bid broadcast to auction:${bidData.auctionId}`);
