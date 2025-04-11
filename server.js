@@ -50,6 +50,7 @@ async function run() {
     const SpecificUserLiveBiddingCollection = db.collection("liveBids");
     const reportsCollection = db.collection("reports");
     const messagesCollection = db.collection("messages");
+    const notificationsCollection = db.collection("notifications");
 
     // JWT Middleware
     const verifyToken = (req, res, next) => {
@@ -87,10 +88,13 @@ async function run() {
       next();
     };
 
-    // Socket.IO Logic for Chat (Email-based)
+    // Socket.IO Logic for Chat and Notifications
     io.on("connection", (socket) => {
+      console.log("New client connected:", socket.id);
+
       const joinedRooms = new Set();
 
+      // Send immediate connection acknowledgment
       socket.emit("connection_ack", {
         id: socket.id,
         status: "connected",
@@ -100,23 +104,25 @@ async function run() {
       socket.on("joinChat", ({ userId, selectedUserId, roomId }) => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
+          console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
 
         if (roomId) {
           socket.join(roomId);
           joinedRooms.add(roomId);
+          console.log(`${socket.id} (${userId}) joined chat room ${roomId}`);
         } else {
           const chatId = [userId, selectedUserId].sort().join("_");
           socket.join(chatId);
           joinedRooms.add(chatId);
-          // console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
+          console.log(`${socket.id} (${userId}) joined chat ${chatId}`);
         }
 
         const personalRoom = `user:${userId}`;
         socket.join(personalRoom);
         joinedRooms.add(personalRoom);
-        // console.log(`${socket.id} joined personal room ${personalRoom}`);
+        console.log(`${socket.id} joined personal room ${personalRoom}`);
 
         socket.emit("joinedRoom", {
           room: roomId || [userId, selectedUserId].sort().join("_"),
@@ -128,7 +134,7 @@ async function run() {
       socket.on("leaveAllRooms", () => {
         joinedRooms.forEach((room) => {
           socket.leave(room);
-          // console.log(`${socket.id} left room ${room}`);
+          console.log(`${socket.id} left room ${room}`);
         });
         joinedRooms.clear();
         socket.emit("leftRooms", { status: "success" });
@@ -182,12 +188,54 @@ async function run() {
           if (callback) callback({ success: false, error: error.message });
         }
       });
+
+      // Handle sending notifications - FIXED: removed duplicate handler
+      socket.on("sendNotification", async (notificationData, callback) => {
+        try {
+          // Add a unique ID to the notification
+          const notificationId = new ObjectId().toString();
+          const notification = {
+            ...notificationData,
+            _id: notificationId,
+            createdAt: new Date(),
+          };
+
+          // Save notification to database
+          const result = await notificationsCollection.insertOne(notification);
+
+          if (result.acknowledged) {
+            // If recipient is specified, emit to that user's personal room
+            if (notification.recipient && notification.recipient !== "all") {
+              io.to(`user:${notification.recipient}`).emit(
+                "receiveNotification",
+                notification
+              );
+            } else {
+              // Otherwise broadcast to all connected clients
+              io.emit("receiveNotification", notification);
+            }
+
+            if (callback) callback({ success: true, notificationId });
+            console.log(`Notification sent: ${notification.title}`);
+          } else {
+            if (callback)
+              callback({
+                success: false,
+                error: "Failed to save notification",
+              });
+          }
+        } catch (error) {
+          console.error("Error sending notification:", error);
+          if (callback) callback({ success: false, error: error.message });
+        }
+      });
+
       socket.on("ping", (callback) => {
         if (callback) callback({ time: new Date(), status: "active" });
       });
 
       socket.on("disconnect", () => {
-        // console.log("Client disconnected:", socket.id);
+        console.log("Client disconnected:", socket.id);
         joinedRooms.clear();
       });
     });
@@ -223,21 +271,21 @@ async function run() {
         }
       }
     );
-    // Fetch the most recent message for each user the current user has interacted with
+
+    // Fetch the most recent message
     app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
       const { userEmail } = req.params;
       try {
         const recentMessages = await messagesCollection
           .aggregate([
-            // Match messages involving the current user
             {
               $match: {
                 $or: [{ senderId: userEmail }, { receiverId: userEmail }],
               },
             },
-            // Sort by createdAt to get the most recent message first
+
             { $sort: { createdAt: -1 } },
-            // Group by the other user's email (sender or receiver)
+
             {
               $group: {
                 _id: {
@@ -267,6 +315,7 @@ async function run() {
         res.status(500).send({ message: "Failed to fetch recent messages" });
       }
     });
+
     // Socket connection test endpoint
     app.get("/socket-test", (req, res) => {
       res.json({
@@ -275,6 +324,145 @@ async function run() {
         uptime: process.uptime(),
       });
     });
+
+    // API endpoints for notifications - FIXED: moved inside run() function
+    app.get("/notifications/:userEmail", verifyToken, async (req, res) => {
+      const { userEmail } = req.params;
+      try {
+        const notifications = await notificationsCollection
+          .find({
+            $or: [{ recipient: userEmail }, { recipient: "all" }],
+          })
+          .sort({ createdAt: -1 })
+          .limit(50)
+          .toArray();
+
+        res.send(notifications);
+      } catch (error) {
+        console.error("Error fetching notifications:", error);
+        res.status(500).send({ message: "Failed to fetch notifications" });
+      }
+    });
+
+    app.put(
+      "/notifications/mark-read/:userEmail",
+      verifyToken,
+      async (req, res) => {
+        const { userEmail } = req.params;
+        try {
+          const result = await notificationsCollection.updateMany(
+            {
+              $or: [
+                { recipient: userEmail, read: false },
+                { recipient: "all", read: false },
+              ],
+            },
+            { $set: { read: true } }
+          );
+
+          res.send({ success: true, modifiedCount: result.modifiedCount });
+        } catch (error) {
+          console.error("Error marking notifications as read:", error);
+          res
+            .status(500)
+            .send({ message: "Failed to mark notifications as read" });
+        }
+      }
+    );
+
+    app.post("/notifications", verifyToken, async (req, res) => {
+      try {
+        const notification = {
+          ...req.body,
+          _id: new ObjectId().toString(),
+          createdAt: new Date(),
+        };
+
+        const result = await notificationsCollection.insertOne(notification);
+
+        if (result.acknowledged) {
+          res.send({ success: true, notificationId: notification._id });
+        } else {
+          res
+            .status(500)
+            .send({ success: false, message: "Failed to save notification" });
+        }
+      } catch (error) {
+        console.error("Error creating notification:", error);
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+    const viewNotificationDetails = (notification) => {
+      setNotifications((prev) =>
+        prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n))
+      );
+
+      if (notificationCount > 0) {
+        setNotificationCount((prev) => prev - 1);
+      }
+
+      // Navigate based on notification type
+      if (notification.type === "auction" && notification.auctionData?._id) {
+        navigate(`/dashboard/auction-details/${notification.auctionData._id}`);
+      } else if (notification.type === "announcement") {
+        navigate("/dashboard/announcement", {
+          state: {
+            notificationDetails: notification,
+          },
+        });
+      }
+
+      // Close notifications panel
+      setIsNotificationsOpen(false);
+    };
+    // Socket.IO Logic for Auction Bidding
+    module.exports = (io) => {
+      io.on("connection", (socket) => {
+        console.log("New client connected:", socket.id);
+
+        socket.emit("connection_ack", {
+          id: socket.id,
+          status: "connected",
+          timestamp: new Date(),
+        });
+
+        // Join auction room
+        socket.on("joinAuction", ({ auctionId }) => {
+          if (auctionId) {
+            socket.join(`auction:${auctionId}`);
+            console.log(
+              `${socket.id} joined auction room: auction:${auctionId}`
+            );
+          }
+        });
+
+        // Leave auction room
+        socket.on("leaveAuction", ({ auctionId }) => {
+          if (auctionId) {
+            socket.leave(`auction:${auctionId}`);
+            console.log(`${socket.id} left auction room: auction:${auctionId}`);
+          }
+        });
+
+        // Handle new bids
+        socket.on("placeBid", async (bidData) => {
+          try {
+            console.log(`New bid received from ${socket.id}:`, bidData);
+
+            io.to(`auction:${bidData.auctionId}`).emit("newBid", bidData);
+
+            console.log(`Bid broadcast to auction:${bidData.auctionId}`);
+          } catch (error) {
+            console.error("Error handling bid:", error);
+            socket.emit("bidError", { message: "Failed to process bid" });
+          }
+        });
+
+        socket.on("disconnect", () => {
+          console.log("Client disconnected:", socket.id);
+        });
+      });
+    };
 
     // JWT Routes
     app.post("/jwt", async (req, res) => {
@@ -512,6 +700,51 @@ async function run() {
       res.send(result);
     });
 
+    //auction er top bidders update
+
+    app.patch("/auctionList/topBidders", async (req, res) => {
+      try {
+        const { topBidders } = req.body;
+
+        if (
+          !topBidders ||
+          !Array.isArray(topBidders) ||
+          topBidders.length === 0
+        ) {
+          return res
+            .status(400)
+            .send({ success: false, message: "Invalid topBidders data." });
+        }
+
+        const auctionId = topBidders[0]?.auctionId;
+
+        if (!auctionId) {
+          return res.status(400).send({
+            success: false,
+            message: "auctionId missing in topBidders.",
+          });
+        }
+
+        const filter = { _id: new ObjectId(auctionId) };
+        const updateDoc = {
+          $set: {
+            topBidders: topBidders,
+          },
+        };
+
+        const result = await auctionCollection.updateOne(filter, updateDoc);
+
+        res.send({
+          success: true,
+          message: "Top bidders updated successfully.",
+          result,
+        });
+      } catch (error) {
+        console.error("Error updating topBidders:", error);
+        res.status(500).send({ success: false, message: "Server error." });
+      }
+    });
+
     // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
@@ -553,12 +786,11 @@ async function run() {
             name: { $first: "$name" },
             photo: { $first: "$photo" },
             amount: { $max: "$amount" },
-            email: { $max: "$email" },
             auctionId: { $first: "$auctionId" },
           },
         },
         { $sort: { amount: -1 } },
-        // { $limit: 3 },
+        { $limit: 3 },
       ]).toArray();
       res.send(result);
     });

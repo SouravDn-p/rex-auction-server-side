@@ -12,7 +12,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -21,7 +21,7 @@ const io = new Server(server, {
 
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://rex-auction.web.app"],
     credentials: true,
   })
 );
@@ -206,7 +206,10 @@ async function run() {
           if (result.acknowledged) {
             // If recipient is specified, emit to that user's personal room
             if (notification.recipient && notification.recipient !== "all") {
-              io.to(`user:${notification.recipient}`).emit("receiveNotification", notification);
+              io.to(`user:${notification.recipient}`).emit(
+                "receiveNotification",
+                notification
+              );
             } else {
               // Otherwise broadcast to all connected clients
               io.emit("receiveNotification", notification);
@@ -215,7 +218,11 @@ async function run() {
             if (callback) callback({ success: true, notificationId });
             console.log(`Notification sent: ${notification.title}`);
           } else {
-            if (callback) callback({ success: false, error: "Failed to save notification" });
+            if (callback)
+              callback({
+                success: false,
+                error: "Failed to save notification",
+              });
           }
         } catch (error) {
           console.error("Error sending notification:", error);
@@ -271,15 +278,14 @@ async function run() {
       try {
         const recentMessages = await messagesCollection
           .aggregate([
-           
             {
               $match: {
                 $or: [{ senderId: userEmail }, { receiverId: userEmail }],
               },
             },
-        
+
             { $sort: { createdAt: -1 } },
-       
+
             {
               $group: {
                 _id: {
@@ -338,25 +344,31 @@ async function run() {
       }
     });
 
-    app.put("/notifications/mark-read/:userEmail", verifyToken, async (req, res) => {
-      const { userEmail } = req.params;
-      try {
-        const result = await notificationsCollection.updateMany(
-          {
-            $or: [
-              { recipient: userEmail, read: false },
-              { recipient: "all", read: false },
-            ],
-          },
-          { $set: { read: true } }
-        );
+    app.put(
+      "/notifications/mark-read/:userEmail",
+      verifyToken,
+      async (req, res) => {
+        const { userEmail } = req.params;
+        try {
+          const result = await notificationsCollection.updateMany(
+            {
+              $or: [
+                { recipient: userEmail, read: false },
+                { recipient: "all", read: false },
+              ],
+            },
+            { $set: { read: true } }
+          );
 
-        res.send({ success: true, modifiedCount: result.modifiedCount });
-      } catch (error) {
-        console.error("Error marking notifications as read:", error);
-        res.status(500).send({ message: "Failed to mark notifications as read" });
+          res.send({ success: true, modifiedCount: result.modifiedCount });
+        } catch (error) {
+          console.error("Error marking notifications as read:", error);
+          res
+            .status(500)
+            .send({ message: "Failed to mark notifications as read" });
+        }
       }
-    });
+    );
 
     app.post("/notifications", verifyToken, async (req, res) => {
       try {
@@ -371,7 +383,9 @@ async function run() {
         if (result.acknowledged) {
           res.send({ success: true, notificationId: notification._id });
         } else {
-          res.status(500).send({ success: false, message: "Failed to save notification" });
+          res
+            .status(500)
+            .send({ success: false, message: "Failed to save notification" });
         }
       } catch (error) {
         console.error("Error creating notification:", error);
@@ -379,26 +393,25 @@ async function run() {
       }
     });
     const viewNotificationDetails = (notification) => {
-     
-      setNotifications((prev) => prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n)));
-    
-   
+      setNotifications((prev) =>
+        prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n))
+      );
+
       if (notificationCount > 0) {
         setNotificationCount((prev) => prev - 1);
       }
-    
+
       // Navigate based on notification type
       if (notification.type === "auction" && notification.auctionData?._id) {
         navigate(`/dashboard/auction-details/${notification.auctionData._id}`);
       } else if (notification.type === "announcement") {
-       
         navigate("/dashboard/announcement", {
           state: {
-            notificationDetails: notification, 
+            notificationDetails: notification,
           },
         });
       }
-    
+
       // Close notifications panel
       setIsNotificationsOpen(false);
     };
