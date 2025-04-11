@@ -1,6 +1,7 @@
 
 
 require("dotenv").config()
+const axios = require("axios");
 const express = require("express")
 const cors = require("cors")
 const jwt = require("jsonwebtoken")
@@ -29,6 +30,7 @@ app.use(
 )
 app.use(express.json())
 app.use(cookieParser())
+app.use(express.urlencoded())
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`
 const client = new MongoClient(uri, {
@@ -50,8 +52,30 @@ async function run() {
     const announcementCollection = db.collection("announcement")
     const SellerRequestCollection = db.collection("sellerRequest")
     const SpecificUserLiveBiddingCollection = db.collection("liveBids")
+    const SSLComCollection = db.collection("paymentsWithSSL")
     const reportsCollection = db.collection("reports")
     const messagesCollection = db.collection("messages")
+
+
+
+    // SSLCOMMERZE ID
+
+
+//     Store ID: rexau67f77422a8374
+// Store Password (API/Secret Key): rexau67f77422a8374@ssl
+
+
+// Merchant Panel URL: https://sandbox.sslcommerz.com/manage/ (Credential as you inputted in the time of registration)
+
+
+ 
+// Store name: testrexauqg5q
+// Registered URL: www.rex-auction.web.app.com
+// Session API to generate transaction: https://sandbox.sslcommerz.com/gwprocess/v3/api.php
+// Validation API: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?wsdl
+// Validation API (Web Service) name: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php
+ 
+
 
     // JWT Middleware
      const verifyToken = (req, res, next) => {
@@ -196,6 +220,83 @@ async function run() {
         joinedRooms.clear();
       });
     });
+
+    // Payment APIs with SSLcom
+    app.post("/paymentsWithSSL", async (req, res) => {
+      const paymentData = req.body;
+      // const result = await SSLComCollection.insertOne(paymentData)
+
+        const trxid = new ObjectId().toString()
+        paymentData.trxid = trxid;
+        const initiate ={ 
+          store_id:"rexau67f77422a8374",
+          store_passwd:"rexau67f77422a8374@ssl",
+          total_amount: Number(paymentData.paymentPrice || 0),
+          tran_id: trxid,
+          currency: 'BDT',
+          success_url: 'http://localhost:5000/success-payment',
+          fail_url: 'http://localhost:5173/fail',
+          cancel_url: 'http://localhost:5173/cancel',
+          ipn_url: 'http://localhost:5000/ipn-success-payment',
+          shipping_method: 'Courier',
+          product_name: 'Computer.',
+          product_category: 'Electronic',
+          product_profile: 'general',
+          cus_name: 'Customer Name',
+          cus_email: `${paymentData.email}`,
+          cus_add1: 'Dhaka',
+          cus_add2: 'Dhaka',
+          cus_city: 'Dhaka',
+          cus_state: 'Dhaka',
+          cus_postcode: '1000',
+          cus_country: 'Bangladesh',
+          cus_phone: '01711111111',
+          cus_fax: '01711111111',
+          ship_name: 'Customer Name',
+          ship_add1: 'Dhaka',
+          ship_add2: 'Dhaka',
+          ship_city: 'Dhaka',
+          ship_state: 'Dhaka',
+          ship_postcode: 1000,
+          ship_country: 'Bangladesh',
+        }
+
+        const iniResponse = await axios({
+          url: "https://sandbox.sslcommerz.com/gwprocess/v4/api.php",
+          method: "POST",
+          data: initiate,
+          headers: { 
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+        })
+
+        const saveData = await SSLComCollection.insertOne(paymentData)
+        const gatewayURL = iniResponse?.data?.GatewayPageURL
+        // console.log(gatewayURL);
+        res.send({gatewayURL})
+    });
+    app.post("/success-payment", async (req, res) => {
+      // success payment data
+      const paymentSuccess = req.body;
+      // console.log(paymentSuccess,"payment success");
+      const {data}= await axios.get(`https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`)
+      console.log(data);
+      if(data.status !== "VALID") {
+          return res.send({message:"invalid payment"})
+        }
+        // update the payment status in the database
+        const updateResult = await SSLComCollection.updateOne(
+          { trxid: paymentSuccess.tran_id},
+          {
+            $set:{
+              status: "success",
+            }
+          }
+        )
+        res.redirect("http://localhost:5173/dashboard/payment")
+        console.log(updateResult,"update result");
+    });
+
 
     // Chat API Endpoints
     app.get("/messages/email/:userEmail/:selectedUserEmail", verifyToken, async (req, res) => {
