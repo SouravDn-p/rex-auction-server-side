@@ -326,7 +326,7 @@ async function run() {
     });
 
     // API endpoints for notifications - FIXED: moved inside run() function
-    app.get("/notifications/:userEmail", verifyToken, async (req, res) => {
+    app.get("/notifications/:userEmail",  async (req, res) => {
       const { userEmail } = req.params;
       try {
         const notifications = await notificationsCollection
@@ -370,7 +370,7 @@ async function run() {
       }
     );
 
-    app.post("/notifications", verifyToken, async (req, res) => {
+    app.post("/notifications",  async (req, res) => {
       try {
         const notification = {
           ...req.body,
