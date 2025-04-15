@@ -51,6 +51,7 @@ async function run() {
     const reportsCollection = db.collection("reports");
     const messagesCollection = db.collection("messages");
     const notificationsCollection = db.collection("notifications");
+    const reactionsCollection = db.collection("auctionReactions");
 
     // JWT Middleware
     const verifyToken = (req, res, next) => {
@@ -463,6 +464,263 @@ async function run() {
       });
     };
 
+
+
+
+// Create index for faster queries and to ensure one reaction per user per auction
+await reactionsCollection.createIndex({ auctionId: 1, userId: 1 }, { unique: true });
+
+// POST: Add or update a reaction
+app.post("/auction-reaction", async (req, res) => {
+  try {
+    const { auctionId, userId, reactionType } = req.body;
+    
+    if (!auctionId || !userId) {
+      return res.status(400).send({ 
+        success: false, 
+        message: "Missing required fields: auctionId and userId are required" 
+      });
+    }
+    
+    // Check if user already has a reaction for this auction
+    const existingReaction = await reactionsCollection.findOne({ 
+      auctionId, 
+      userId 
+    });
+    
+    if (existingReaction) {
+      // If reactionType is null, remove the reaction
+      if (reactionType === null) {
+        const result = await reactionsCollection.deleteOne({ auctionId, userId });
+        return res.send({ 
+          success: true, 
+          message: "Reaction removed", 
+          result 
+        });
+      }
+      
+      // Update existing reaction
+      const result = await reactionsCollection.updateOne(
+        { auctionId, userId },
+        { $set: { reactionType, updatedAt: new Date() } }
+      );
+      
+      return res.send({ 
+        success: true, 
+        message: "Reaction updated", 
+        result 
+      });
+    } else {
+      // If reactionType is null, no need to create a new document
+      if (reactionType === null) {
+        return res.send({ 
+          success: true, 
+          message: "No reaction to remove" 
+        });
+      }
+      
+      // Create new reaction
+      const result = await reactionsCollection.insertOne({
+        auctionId,
+        userId,
+        reactionType,
+        createdAt: new Date()
+      });
+      
+      return res.send({ 
+        success: true, 
+        message: "Reaction added", 
+        result 
+      });
+    }
+  } catch (error) {
+    console.error("Error handling reaction:", error);
+    
+    // Handle duplicate key error (user trying to add multiple reactions)
+    if (error.code === 11000) {
+      return res.status(409).send({ 
+        success: false, 
+        message: "You already reacted to this auction" 
+      });
+    }
+    
+    res.status(500).send({ 
+      success: false, 
+      message: "Failed to process reaction", 
+      error: error.message 
+    });
+  }
+});
+
+// GET: Retrieve reactions for an auction
+app.get("/auction-reactions/:auctionId", async (req, res) => {
+  try {
+    const { auctionId } = req.params;
+    const { userId } = req.query;
+    
+    // Get all reactions for this auction
+    const reactions = await reactionsCollection.find({ auctionId }).toArray();
+    
+    // Count reactions by type
+    const reactionCounts = {
+      likes: reactions.filter(r => r.reactionType === 'likes').length,
+      loves: reactions.filter(r => r.reactionType === 'loves').length,
+      smiles: reactions.filter(r => r.reactionType === 'smiles').length,
+      wows: reactions.filter(r => r.reactionType === 'wows').length,
+      flags: reactions.filter(r => r.reactionType === 'flags').length
+    };
+    
+    // If userId is provided, get the user's reaction
+    let userReactions = [];
+    if (userId) {
+      const userReaction = reactions.find(r => r.userId === userId);
+      if (userReaction) {
+        userReactions.push(userReaction);
+      }
+    }
+    
+    res.send({
+      success: true,
+      reactionCounts,
+      totalReactions: reactions.length,
+      userReactions
+    });
+  } catch (error) {
+    console.error("Error fetching reactions:", error);
+    res.status(500).send({ 
+      success: false, 
+      message: "Failed to fetch reactions", 
+      error: error.message 
+    });
+  }
+});
+
+// GET: Get reaction statistics for all auctions
+app.get("/auction-reactions-stats", async (req, res) => {
+  try {
+    // Aggregate to get total reactions by type
+    const stats = await reactionsCollection.aggregate([
+      {
+        $group: {
+          _id: "$reactionType",
+          count: { $sum: 1 }
+        }
+      }
+    ]).toArray();
+    
+    // Format the results
+    const formattedStats = stats.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+    
+    // Get total auctions with reactions
+    const auctionsWithReactions = await reactionsCollection.aggregate([
+      {
+        $group: {
+          _id: "$auctionId"
+        }
+      },
+      {
+        $count: "total"
+      }
+    ]).toArray();
+    
+    res.send({
+      success: true,
+      stats: formattedStats,
+      totalAuctionsWithReactions: auctionsWithReactions[0]?.total || 0
+    });
+  } catch (error) {
+    console.error("Error fetching reaction stats:", error);
+    res.status(500).send({ 
+      success: false, 
+      message: "Failed to fetch reaction statistics", 
+      error: error.message 
+    });
+  }
+});
+
+// GET: Get most reacted auctions
+app.get("/most-reacted-auctions", async (req, res) => {
+  try {
+    const { limit = 5 } = req.query;
+    
+    // Aggregate to get auctions with most reactions
+    const mostReactedAuctions = await reactionsCollection.aggregate([
+      {
+        $group: {
+          _id: "$auctionId",
+          totalReactions: { $sum: 1 },
+          reactionTypes: { 
+            $push: "$reactionType" 
+          }
+        }
+      },
+      {
+        $sort: { totalReactions: -1 }
+      },
+      {
+        $limit: parseInt(limit)
+      }
+    ]).toArray();
+    
+    // For each auction, count reaction types
+    const result = mostReactedAuctions.map(auction => {
+      const reactionCounts = auction.reactionTypes.reduce((acc, type) => {
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {});
+      
+      return {
+        auctionId: auction._id,
+        totalReactions: auction.totalReactions,
+        reactionCounts
+      };
+    });
+    
+    res.send({
+      success: true,
+      mostReactedAuctions: result
+    });
+  } catch (error) {
+    console.error("Error fetching most reacted auctions:", error);
+    res.status(500).send({ 
+      success: false, 
+      message: "Failed to fetch most reacted auctions", 
+      error: error.message 
+    });
+  }
+});
+
+// DELETE: Remove all reactions for an auction (admin only)
+app.delete("/auction-reactions/:auctionId", async (req, res) => {
+  try {
+    const { auctionId } = req.params;
+    
+    // In a real app, you would verify admin permissions here
+    // if (!isAdmin(req.user)) {
+    //   return res.status(403).send({ success: false, message: "Unauthorized" });
+    // }
+    
+    const result = await reactionsCollection.deleteMany({ auctionId });
+    
+    res.send({
+      success: true,
+      message: `Deleted ${result.deletedCount} reactions for auction ${auctionId}`,
+      result
+    });
+  } catch (error) {
+    console.error("Error deleting reactions:", error);
+    res.status(500).send({ 
+      success: false, 
+      message: "Failed to delete reactions", 
+      error: error.message 
+    });
+  }
+});
+
+    
     // JWT Routes
     app.post("/jwt", async (req, res) => {
       const user = req.body;
