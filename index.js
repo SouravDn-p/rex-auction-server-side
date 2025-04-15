@@ -243,7 +243,6 @@ async function run() {
     // Chat API Endpoints
     app.get(
       "/messages/email/:userEmail/:selectedUserEmail",
-      verifyToken,
       async (req, res) => {
         const { userEmail, selectedUserEmail } = req.params;
         const { since } = req.query;
@@ -273,7 +272,7 @@ async function run() {
     );
 
     // Fetch the most recent message
-    app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
+    app.get("/recent-messages/:userEmail", async (req, res) => {
       const { userEmail } = req.params;
       try {
         const recentMessages = await messagesCollection
@@ -326,7 +325,7 @@ async function run() {
     });
 
     // API endpoints for notifications - FIXED: moved inside run() function
-    app.get("/notifications/:userEmail",  async (req, res) => {
+    app.get("/notifications/:userEmail", async (req, res) => {
       const { userEmail } = req.params;
       try {
         const notifications = await notificationsCollection
@@ -346,7 +345,7 @@ async function run() {
 
     app.put(
       "/notifications/mark-read/:userEmail",
-      verifyToken,
+      // verifyToken,
       async (req, res) => {
         const { userEmail } = req.params;
         try {
@@ -370,7 +369,7 @@ async function run() {
       }
     );
 
-    app.post("/notifications",  async (req, res) => {
+    app.post("/notifications", async (req, res) => {
       try {
         const notification = {
           ...req.body,
