@@ -954,48 +954,48 @@ async function run() {
     });
     app.patch("/auctions/payment/:id", async (req, res) => {
       try {
-        const { id } = req.params
-        const { payment, paymentDetails } = req.body
-  
+        const { id } = req.params;
+        const { payment, paymentDetails } = req.body;
+
         if (!payment) {
           return res.status(400).send({
             success: false,
             message: "Payment status is required",
-          })
+          });
         }
-  
-        const filter = { _id: new ObjectId(id) }
+
+        const filter = { _id: new ObjectId(id) };
         const updateDoc = {
           $set: {
             payment,
             paymentDetails,
             paymentDate: new Date(),
           },
-        }
-  
-        const result = await auctionCollection.updateOne(filter, updateDoc)
-  
+        };
+
+        const result = await auctionCollection.updateOne(filter, updateDoc);
+
         if (result.matchedCount === 0) {
           return res.status(404).send({
             success: false,
             message: "Auction not found",
-          })
+          });
         }
-  
+
         res.send({
           success: true,
           message: "Payment status updated successfully",
           result,
-        })
+        });
       } catch (error) {
-        console.error("Error updating payment status:", error)
+        console.error("Error updating payment status:", error);
         res.status(500).send({
           success: false,
           message: "Failed to update payment status",
           error: error.message,
-        })
+        });
       }
-    })
+    });
     app.patch("/auctions/:id", async (req, res) => {
       const auctionId = req.params.id;
       const { status } = req.body;
@@ -1060,9 +1060,9 @@ async function run() {
     // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
-      const { accountBalance } = req.body;
+      const { accountBalance, transaction } = req.body;
 
-      if (!accountBalance) {
+      if (!accountBalance && !transaction) {
         return res
           .status(400)
           .send({ success: false, message: "accountBalance is required!" });
@@ -1070,7 +1070,7 @@ async function run() {
 
       const updatedUser = await userCollection.updateOne(
         { _id: new ObjectId(userId) },
-        { $set: { accountBalance } }
+        { $set: { accountBalance }, $push: { transactions: transaction } }
       );
 
       if (updatedUser.modifiedCount > 0) {
@@ -1179,7 +1179,7 @@ async function run() {
       }
     });
 
-    //feedback post api 
+    //feedback post api
 
     app.post("/feedback", async (req, res) => {
       try {

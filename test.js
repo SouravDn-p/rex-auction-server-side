@@ -1017,7 +1017,6 @@ async function run() {
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
       const { accountBalance, transaction } = req.body;
-      console.log("transaction : ", transaction);
 
       if (!accountBalance) {
         return res
