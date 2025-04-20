@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const cookieParser = require("cookie-parser");
+// const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
@@ -26,7 +26,7 @@ app.use(
   })
 );
 app.use(express.json());
-app.use(cookieParser());
+// app.use(cookieParser());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -54,41 +54,58 @@ async function run() {
     const reactionsCollection = db.collection("auctionReactions");
     const feedbackCollection = db.collection("feedbacks");
 
-    // JWT Middleware
+    app.post('/jwt', async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: '100h' });
+      res.send({ token });
+    })
+
+
     const verifyToken = (req, res, next) => {
-      const token =
-        req?.cookies?.token || req.headers["authorization"]?.split(" ")[1];
-      if (!token)
-        return res.status(401).send({ message: "Unauthorized access" });
-      jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
-        if (err)
-          return res.status(401).send({ message: "Unauthorized access" });
-        req.decodedUser = decoded;
+      const authHeader = req.headers.authorization;
+
+      if (!authHeader) {
+        return res.status(401).send({ message: "Unauthorized request - No token" });
+      }
+
+      const token = authHeader.split(" ")[1];
+
+      jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
+        if (error) {
+          return res.status(401).send({ message: "Forbidden access - Invalid token" });
+        }
+
+        req.decoded = decoded;
         next();
       });
     };
 
+
+
     // Verify Admin Middleware
     const verifyAdmin = async (req, res, next) => {
-      const email = req.decodedUser.email;
+      const email = req.decoded.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isAdmin = user?.role === "admin";
-      if (!isAdmin)
-        return res.status(401).send({ message: "Unauthorized request" });
+      const isAdmin = user?.role === 'admin';
+      if (!isAdmin) {
+        return res.status(403).send({ message: 'forbidden access' })
+      }
       next();
-    };
+    }
+
 
     // Verify Seller Middleware
     const verifySeller = async (req, res, next) => {
-      const email = req.decodedUser.email;
+      const email = req.decoded.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isSeller = user?.role === "seller";
-      if (!isSeller)
-        return res.status(401).send({ message: "Unauthorized request" });
+      const isSeller = user?.role === 'seller';
+      if (!isSeller) {
+        return res.status(403).send({ message: 'forbidden access' })
+      }
       next();
-    };
+    }
 
     // Socket.IO Logic for Chat and Notifications
     io.on("connection", (socket) => {
@@ -733,22 +750,27 @@ async function run() {
       }
     });
 
-    // JWT Routes
-    app.post("/jwt", async (req, res) => {
-      const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
-        expiresIn: "1d",
-      });
-      res
-        .cookie("token", token, { httpOnly: true, secure: false })
-        .send({ success: true });
-    });
+    // // JWT Routes
+    // app.post("/jwt", async (req, res) => {
+    //   const user = req.body;
+    //   const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+    //     expiresIn: "1d",
+    //   });
+    //   res
+    //     .cookie("token", token, { httpOnly: true, secure: false })
+    //     .send({ success: true });
+    // });
 
     app.post("/logout", (req, res) => {
       res
-        .clearCookie("token", { httpOnly: true, secure: false })
-        .send({ success: true });
+        .clearCookie("token", {
+          httpOnly: true,
+          secure: false, // Only false in dev/localhost, true in production
+          sameSite: "lax",
+        })
+        .send({ success: true, message: "Logged out successfully." });
     });
+
 
     // Seller Request APIs
     app.get("/sellerRequest/:becomeSellerStatus", async (req, res) => {
@@ -947,7 +969,7 @@ async function run() {
       }
     });
 
-    app.post("/auctions", async (req, res) => {
+    app.post("/auctions", verifyToken, verifySeller, async (req, res) => {
       const auction = req.body;
       const result = await auctionCollection.insertOne(auction);
       res.send(result);
@@ -1125,6 +1147,52 @@ async function run() {
       }
     });
 
+    // GET route cover profile
+    app.get("/cover/:userId", async (req, res) => {
+      const userId = req.params.userId;
+      try {
+        const user = await userCollection.findOne({ uid: userId });
+        res.send({ image: user?.cover || "" });
+      } catch (err) {
+        res.status(500).send({ error: "Failed to fetch user cover." });
+      }
+    });
+    // PATCH cover
+    app.patch("/cover", async (req, res) => {
+      const { userId, image } = req.body;
+
+      if (!userId || !image) {
+        return res
+          .status(400)
+          .send({ error: "Missing userId or image in request body." });
+      }
+
+      try {
+        const result = await userCollection.updateOne(
+          { uid: userId }, // Replace "uid" with your actual user field (e.g., _id, email, etc.)
+          { $set: { cover: image } },
+          { upsert: false } // Set to true only if you want to create the user doc if not found
+        );
+
+        if (result.modifiedCount > 0) {
+          res.send({
+            success: true,
+            message: "Cover image updated successfully.",
+          });
+        } else {
+          res.status(404).send({
+            success: false,
+            message: "User not found or cover unchanged.",
+          });
+        }
+      } catch (error) {
+        console.error("Error updating cover image:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Internal Server Error" });
+      }
+    });
+
     //feedback get method
 
     app.get("/feedbacks", async (req, res) => {
@@ -1136,7 +1204,7 @@ async function run() {
       }
     });
 
-    //feedback post api 
+    //feedback post api
 
     app.post("/feedback", async (req, res) => {
       try {
