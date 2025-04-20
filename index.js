@@ -369,7 +369,32 @@ async function run() {
         }
       }
     );
-
+// Backend: notifications route (e.g., notifications.js)
+app.post("/notifications", async (req, res) => {
+  const notificationData = req.body;
+  try {
+    if (notificationData.recipient === "admin") {
+      // Find all admin users
+      const admins = await User.find({ role: "admin" });
+      const adminNotifications = admins.map((admin) => ({
+        ...notificationData,
+        recipient: admin.email,
+        timestamp: new Date(),
+        read: false,
+      }));
+      await Notification.insertMany(adminNotifications);
+    } else {
+      // Single recipient notification
+      const notification = await Notification.create(notificationData);
+      // Optionally emit via Socket.IO
+      io.emit("sendNotification", notification);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error creating notification:", error);
+    res.status(500).json({ success: false, message: "Failed to create notification" });
+  }
+});
     app.post("/notifications", async (req, res) => {
       try {
         const notification = {
@@ -967,7 +992,49 @@ async function run() {
       const result = await auctionCollection.deleteOne(filter);
       res.send(result);
     });
-
+// Update auction payment status
+app.patch("/auctions/payment/:id", async (req, res) => {
+  try {
+    const auctionId = req.params.id;
+    const { payment, paymentDetails } = req.body;
+    
+    if (!payment) {
+      return res.status(400).send({ 
+        success: false, 
+        message: "Payment status is required!" 
+      });
+    }
+    
+    const filter = { _id: new ObjectId(auctionId) };
+    const updateDoc = { 
+      $set: { 
+        payment,
+        paymentDetails
+      } 
+    };
+    
+    const result = await auctionCollection.updateOne(filter, updateDoc);
+    
+    if (result.modifiedCount > 0) {
+      res.send({
+        success: true,
+        message: "Payment status updated successfully!",
+        result
+      });
+    } else {
+      res.status(404).send({
+        success: false,
+        message: "Auction not found or payment status not changed!"
+      });
+    }
+  } catch (error) {
+    console.error("Error updating payment status:", error);
+    res.status(500).send({ 
+      success: false, 
+      message: "Server error while updating payment status." 
+    });
+  }
+});
     //auction er top bidders update
 
     app.patch("/auctionList/topBidders", async (req, res) => {
