@@ -6,7 +6,7 @@ const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
-
+const axios = require("axios");
 const port = process.env.PORT || 5000;
 const app = express();
 const server = http.createServer(app);
@@ -27,7 +27,7 @@ app.use(
 );
 app.use(express.json());
 app.use(cookieParser());
-
+app.use(express.urlencoded());
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: {
@@ -53,6 +53,21 @@ async function run() {
     const notificationsCollection = db.collection("notifications");
     const reactionsCollection = db.collection("auctionReactions");
     const feedbackCollection = db.collection("feedbacks");
+    const CoverCollection = db.collection("cover");
+    const SSLComCollection = db.collection("paymentsWithSSL");
+   
+    // SSLCOMMERZE ID
+
+    //     Store ID: rexau67f77422a8374
+    // Store Password (API/Secret Key): rexau67f77422a8374@ssl
+
+    // Merchant Panel URL: https://sandbox.sslcommerz.com/manage/ (Credential as you inputted in the time of registration)
+
+    // Store name: testrexauqg5q
+    // Registered URL: www.rex-auction.web.app.com
+    // Session API to generate transaction: https://sandbox.sslcommerz.com/gwprocess/v3/api.php
+    // Validation API: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?wsdl
+    // Validation API (Web Service) name: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php
 
     // JWT Middleware
     const verifyToken = (req, res, next) => {
@@ -241,6 +256,115 @@ async function run() {
         joinedRooms.clear();
       });
     });
+
+    // Payment APIs with SSLcom
+    app.post("/paymentsWithSSL", async (req, res) => {
+      const paymentData = req.body;
+      // const result = await SSLComCollection.insertOne(paymentData)
+      console.log("data " , paymentData);
+
+      const trxid = new ObjectId().toString();
+      paymentData.trxid = trxid;
+      const initiate = {
+        store_id: "rexau67f77422a8374",
+        store_passwd: "rexau67f77422a8374@ssl",
+        total_amount: Number(paymentData.price || 0),
+        price: paymentData.price,
+        serviceFee: paymentData.serviceFee,
+        buyerInfo: paymentData.buyerInfo,
+        tran_id: trxid,
+        currency: "BDT",
+        auctionId: paymentData.auctionId,
+        success_url: "http://localhost:5000/success-payment",
+        fail_url: "http://localhost:5173/fail",
+        cancel_url: "http://localhost:5173/cancel",
+        ipn_url: "http://localhost:5000/ipn-success-payment",
+        shipping_method: "Courier",
+        product_name: `${paymentData.name}`,
+        product_category: `${paymentData.itemInfo.category}`,
+        product_profile: `${paymentData.buyerInfo.photoUrl}`,
+        cus_name: `${paymentData.buyerInfo.name}`,
+        cus_email: `${paymentData.buyerInfo.email}`,
+        cus_add1: "Dhaka",
+        cus_add2: "Dhaka",
+        cus_city: "Dhaka",
+        cus_state: "Dhaka",
+        cus_postcode: "1000",
+        cus_country: "Bangladesh",
+        cus_phone: "01711111111",
+        cus_fax: "01711111111",
+        ship_name: "Customer Name",
+        ship_add1: "Dhaka",
+        ship_add2: "Dhaka",
+        ship_city: "Dhaka",
+        ship_state: "Dhaka",
+        ship_postcode: 1000,
+        ship_country: "Bangladesh",
+      };
+
+      const iniResponse = await axios({
+        url: "https://sandbox.sslcommerz.com/gwprocess/v4/api.php",
+        method: "POST",
+        data: initiate,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+      console.log(iniResponse,"response");
+
+      await SSLComCollection.insertOne(paymentData);
+
+      const gatewayURL = iniResponse?.data?.GatewayPageURL;
+      // console.log(gatewayURL);
+      res.send({ gatewayURL });
+    });
+    app.post("/success-payment", async (req, res) => {
+      // success payment data
+      const paymentSuccess = req.body;
+      // console.log(paymentSuccess,"payment success");
+      const { data } = await axios.get(
+        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
+      );
+      console.log(data);
+      if (data.status !== "VALID") {
+        return res.send({ message: "invalid payment" });
+      }
+      // update the payment status in the database
+      const updateResult = await SSLComCollection.updateOne(
+        { trxid: paymentSuccess.tran_id },
+        {
+          $set: {
+            status: "success",
+          },
+        }
+      );
+      res.redirect("http://localhost:5173/dashboard/payment");
+      console.log(updateResult, "update result");
+    });
+
+
+      
+    
+    
+    app.post('/create-sslCom', async (req, res) => {
+        const paymentData = req.body;
+        console.log(paymentData);  
+  } )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // Chat API Endpoints
     app.get(
@@ -1194,6 +1318,174 @@ async function run() {
       }
     });
 
+    // POST a report (Joyeta)
+    app.post("/reports", async (req, res) => {
+      try {
+        const report = req.body;
+
+        if (!report || Object.keys(report).length === 0) {
+          return res.status(400).send({ message: "Report data is required" });
+        }
+
+        const result = await reportCollection.insertOne(report);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Failed to submit report", error: error.message });
+      }
+    });
+
+    //feedback get method
+
+    app.get("/feedbacks", async (req, res) => {
+      try {
+        const feedbacks = await feedbackCollection.find().toArray();
+        res.status(200).send(feedbacks);
+      } catch (error) {
+        res.status(500).send("internal server error", error);
+      }
+    });
+
+    //feedback post api
+
+    app.post("/feedback", async (req, res) => {
+      try {
+        const feedback = req.body;
+        if (!feedback) {
+          return res.status(400).send({ message: "Feedback data is required" });
+        }
+        const result = await feedbackCollection.insertOne(feedback);
+        res.status(200).send({ success: true, result });
+      } catch (error) {
+        res.status(500).send("internal server error", error);
+      }
+    });
+    // cover collection api
+    // app.post("/cover", async (req, res) => {
+    //   const feedback = req.body;
+
+    //   const result = await CoverCollection.insertOne(feedback);
+    //   res.status(200).send({ success: true, result });
+    // });
+
+      app.patch("/cover", async (req, res) => {
+      const userId = req.params.id;
+      const { cover } = req.body;
+      const filter = { _id: new ObjectId(userId) };
+      const updateDoc = { $set: { cover:cover } };
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+// Update user profile
+app.patch("/user/:email", async (req, res) => {
+  const email = req.params.email;
+  const updates = req.body;
+  // List of allowed fields to update
+  const allowedFields = [
+    "name",
+    "email",
+    "photo",
+    "role",
+    "AuctionsWon",
+    "ActiveBids",
+    "TotalSpent",
+    "accountBalance",
+    "BiddingHistory",
+    "onGoingBid",
+    "Location",
+    "memberSince",
+    "recentActivity",
+    "watchingNow",
+  ];
+  
+  // Filter updates to only include allowed fields
+  const filteredUpdates = Object.keys(updates)
+    .filter((key) => allowedFields.includes(key))
+    .reduce((obj, key) => {
+      obj[key] = updates[key];
+      return obj;
+    }, {});
+
+  const filter = { email: email };
+  const updateDoc = { $set: filteredUpdates };
+
+  try {
+    const result = await userCollection.updateOne(filter, updateDoc);
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "User not found" });
+    }
+    const updatedUser = await userCollection.findOne(filter);
+    res.send(updatedUser);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to update profile" });
+  }
+});
+
+// Update cover photo
+app.patch("/cover/:id", async (req, res) => {
+  const userId = req.params.id;
+  const { cover } = req.body;
+  const filter = { _id: new ObjectId(userId) };
+  const updateDoc = { $set: { cover: cover } };
+  try {
+    const result = await userCollection.updateOne(filter, updateDoc);
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "User not found" });
+    }
+    const updatedUser = await userCollection.findOne(filter);
+    res.send(updatedUser);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to update cover" });
+  }
+});
+
+// Upload photo
+app.post("/upload-photo", upload.single("photo"), async (req, res) => {
+  try {
+    const photo = req.file;
+    if (!photo) {
+      return res.status(400).send({ message: "No photo uploaded" });
+    }
+    // Upload to Cloudinary
+    const uploadResult = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        { resource_type: "image" },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      ).end(photo.buffer);
+    });
+    res.send({ url: uploadResult.secure_url });
+  } catch (err) {
+    res.status(500).send({ message: "Failed to upload photo" });
+  }
+});
+
+    app.get("/cover", async (req, res) => {
+      try {
+        const feedbacks = await CoverCollection.find().toArray();
+        res.status(200).send(feedbacks);
+      } catch (error) {
+        res.status(500).send("internal server error", error);
+      }
+    });
+    // app.get("/cover/:userId", async (req, res) => {
+    //   try {
+    //     const userId = req.query.userId; // Get userId from query parameters
+    //     const query = { userId: userId }; 
+    
+    //     const result = await CoverCollection.findOne(query);
+    //     if (result) {
+    //       res.status(200).send(result);
+    //     } else {
+    //       res.status(404).send({ message: "Cover not found" });
+    //     }
+    //   } catch (error) {
+    //     res.status(500).send({ message: "Internal server error", error });
+    //   }
+    // });
     // Debug endpoint to check active socket connections
     app.get("/debug/socket-connections", (req, res) => {
       const connections = Array.from(io.sockets.sockets).map(
