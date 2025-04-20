@@ -41,6 +41,7 @@ async function run() {
   try {
     await client.connect();
     console.log("Connected to MongoDB");
+
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
@@ -1016,17 +1017,17 @@ async function run() {
     // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
-      const { accountBalance, transaction } = req.body;
-      if (!accountBalance || !transaction) {
-        return res.status(400).send({
-          success: false,
-          message: "valid information is required!",
-        });
+      const { accountBalance } = req.body;
+
+      if (!accountBalance) {
+        return res
+          .status(400)
+          .send({ success: false, message: "accountBalance is required!" });
       }
 
       const updatedUser = await userCollection.updateOne(
         { _id: new ObjectId(userId) },
-        { $set: { accountBalance }, $push: { transactions: transaction } }
+        { $set: { accountBalance } }
       );
 
       if (updatedUser.modifiedCount > 0) {
@@ -1124,52 +1125,6 @@ async function run() {
       }
     });
 
-    // GET route cover profile
-    app.get("/cover/:userId", async (req, res) => {
-      const userId = req.params.userId;
-      try {
-        const user = await userCollection.findOne({ uid: userId });
-        res.send({ image: user?.cover || "" });
-      } catch (err) {
-        res.status(500).send({ error: "Failed to fetch user cover." });
-      }
-    });
-    // PATCH cover
-    app.patch("/cover", async (req, res) => {
-      const { userId, image } = req.body;
-
-      if (!userId || !image) {
-        return res
-          .status(400)
-          .send({ error: "Missing userId or image in request body." });
-      }
-
-      try {
-        const result = await userCollection.updateOne(
-          { uid: userId }, // Replace "uid" with your actual user field (e.g., _id, email, etc.)
-          { $set: { cover: image } },
-          { upsert: false } // Set to true only if you want to create the user doc if not found
-        );
-
-        if (result.modifiedCount > 0) {
-          res.send({
-            success: true,
-            message: "Cover image updated successfully.",
-          });
-        } else {
-          res.status(404).send({
-            success: false,
-            message: "User not found or cover unchanged.",
-          });
-        }
-      } catch (error) {
-        console.error("Error updating cover image:", error);
-        res
-          .status(500)
-          .send({ success: false, message: "Internal Server Error" });
-      }
-    });
-
     //feedback get method
 
     app.get("/feedbacks", async (req, res) => {
@@ -1181,7 +1136,7 @@ async function run() {
       }
     });
 
-    //feedback post api
+    //feedback post api 
 
     app.post("/feedback", async (req, res) => {
       try {
