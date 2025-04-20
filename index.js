@@ -41,6 +41,7 @@ async function run() {
   try {
     await client.connect();
     console.log("Connected to MongoDB");
+
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
@@ -369,32 +370,7 @@ async function run() {
         }
       }
     );
-// Backend: notifications route (e.g., notifications.js)
-app.post("/notifications", async (req, res) => {
-  const notificationData = req.body;
-  try {
-    if (notificationData.recipient === "admin") {
-      // Find all admin users
-      const admins = await User.find({ role: "admin" });
-      const adminNotifications = admins.map((admin) => ({
-        ...notificationData,
-        recipient: admin.email,
-        timestamp: new Date(),
-        read: false,
-      }));
-      await Notification.insertMany(adminNotifications);
-    } else {
-      // Single recipient notification
-      const notification = await Notification.create(notificationData);
-      // Optionally emit via Socket.IO
-      io.emit("sendNotification", notification);
-    }
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Error creating notification:", error);
-    res.status(500).json({ success: false, message: "Failed to create notification" });
-  }
-});
+
     app.post("/notifications", async (req, res) => {
       try {
         const notification = {
@@ -992,49 +968,7 @@ app.post("/notifications", async (req, res) => {
       const result = await auctionCollection.deleteOne(filter);
       res.send(result);
     });
-// Update auction payment status
-app.patch("/auctions/payment/:id", async (req, res) => {
-  try {
-    const auctionId = req.params.id;
-    const { payment, paymentDetails } = req.body;
-    
-    if (!payment) {
-      return res.status(400).send({ 
-        success: false, 
-        message: "Payment status is required!" 
-      });
-    }
-    
-    const filter = { _id: new ObjectId(auctionId) };
-    const updateDoc = { 
-      $set: { 
-        payment,
-        paymentDetails
-      } 
-    };
-    
-    const result = await auctionCollection.updateOne(filter, updateDoc);
-    
-    if (result.modifiedCount > 0) {
-      res.send({
-        success: true,
-        message: "Payment status updated successfully!",
-        result
-      });
-    } else {
-      res.status(404).send({
-        success: false,
-        message: "Auction not found or payment status not changed!"
-      });
-    }
-  } catch (error) {
-    console.error("Error updating payment status:", error);
-    res.status(500).send({ 
-      success: false, 
-      message: "Server error while updating payment status." 
-    });
-  }
-});
+
     //auction er top bidders update
 
     app.patch("/auctionList/topBidders", async (req, res) => {
@@ -1083,17 +1017,17 @@ app.patch("/auctions/payment/:id", async (req, res) => {
     // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
-      const { accountBalance, transaction } = req.body;
-      if (!accountBalance || !transaction) {
-        return res.status(400).send({
-          success: false,
-          message: "valid information is required!",
-        });
+      const { accountBalance } = req.body;
+
+      if (!accountBalance) {
+        return res
+          .status(400)
+          .send({ success: false, message: "accountBalance is required!" });
       }
 
       const updatedUser = await userCollection.updateOne(
         { _id: new ObjectId(userId) },
-        { $set: { accountBalance }, $push: { transactions: transaction } }
+        { $set: { accountBalance } }
       );
 
       if (updatedUser.modifiedCount > 0) {
@@ -1191,52 +1125,6 @@ app.patch("/auctions/payment/:id", async (req, res) => {
       }
     });
 
-    // GET route cover profile
-    app.get("/cover/:userId", async (req, res) => {
-      const userId = req.params.userId;
-      try {
-        const user = await userCollection.findOne({ uid: userId });
-        res.send({ image: user?.cover || "" });
-      } catch (err) {
-        res.status(500).send({ error: "Failed to fetch user cover." });
-      }
-    });
-    // PATCH cover
-    app.patch("/cover", async (req, res) => {
-      const { userId, image } = req.body;
-
-      if (!userId || !image) {
-        return res
-          .status(400)
-          .send({ error: "Missing userId or image in request body." });
-      }
-
-      try {
-        const result = await userCollection.updateOne(
-          { uid: userId }, // Replace "uid" with your actual user field (e.g., _id, email, etc.)
-          { $set: { cover: image } },
-          { upsert: false } // Set to true only if you want to create the user doc if not found
-        );
-
-        if (result.modifiedCount > 0) {
-          res.send({
-            success: true,
-            message: "Cover image updated successfully.",
-          });
-        } else {
-          res.status(404).send({
-            success: false,
-            message: "User not found or cover unchanged.",
-          });
-        }
-      } catch (error) {
-        console.error("Error updating cover image:", error);
-        res
-          .status(500)
-          .send({ success: false, message: "Internal Server Error" });
-      }
-    });
-
     //feedback get method
 
     app.get("/feedbacks", async (req, res) => {
@@ -1248,7 +1136,7 @@ app.patch("/auctions/payment/:id", async (req, res) => {
       }
     });
 
-    //feedback post api
+    //feedback post api 
 
     app.post("/feedback", async (req, res) => {
       try {
