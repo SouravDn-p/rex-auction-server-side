@@ -41,7 +41,6 @@ async function run() {
   try {
     await client.connect();
     console.log("Connected to MongoDB");
-
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
@@ -51,6 +50,8 @@ async function run() {
     const reportsCollection = db.collection("reports");
     const messagesCollection = db.collection("messages");
     const notificationsCollection = db.collection("notifications");
+    const reactionsCollection = db.collection("auctionReactions");
+    const feedbackCollection = db.collection("feedbacks");
 
     // JWT Middleware
     const verifyToken = (req, res, next) => {
@@ -243,7 +244,6 @@ async function run() {
     // Chat API Endpoints
     app.get(
       "/messages/email/:userEmail/:selectedUserEmail",
-      verifyToken,
       async (req, res) => {
         const { userEmail, selectedUserEmail } = req.params;
         const { since } = req.query;
@@ -273,7 +273,7 @@ async function run() {
     );
 
     // Fetch the most recent message
-    app.get("/recent-messages/:userEmail", verifyToken, async (req, res) => {
+    app.get("/recent-messages/:userEmail", async (req, res) => {
       const { userEmail } = req.params;
       try {
         const recentMessages = await messagesCollection
@@ -326,7 +326,7 @@ async function run() {
     });
 
     // API endpoints for notifications - FIXED: moved inside run() function
-    app.get("/notifications/:userEmail", verifyToken, async (req, res) => {
+    app.get("/notifications/:userEmail", async (req, res) => {
       const { userEmail } = req.params;
       try {
         const notifications = await notificationsCollection
@@ -346,7 +346,7 @@ async function run() {
 
     app.put(
       "/notifications/mark-read/:userEmail",
-      verifyToken,
+      // verifyToken,
       async (req, res) => {
         const { userEmail } = req.params;
         try {
@@ -370,7 +370,7 @@ async function run() {
       }
     );
 
-    app.post("/notifications", verifyToken, async (req, res) => {
+    app.post("/notifications", async (req, res) => {
       try {
         const notification = {
           ...req.body,
@@ -463,6 +463,274 @@ async function run() {
         });
       });
     };
+
+    // Create index for faster queries and to ensure one reaction per user per auction
+    await reactionsCollection.createIndex(
+      { auctionId: 1, userId: 1 },
+      { unique: true }
+    );
+
+    // POST: Add or update a reaction
+    app.post("/auction-reaction", async (req, res) => {
+      try {
+        const { auctionId, userId, reactionType } = req.body;
+
+        if (!auctionId || !userId) {
+          return res.status(400).send({
+            success: false,
+            message:
+              "Missing required fields: auctionId and userId are required",
+          });
+        }
+
+        // Check if user already has a reaction for this auction
+        const existingReaction = await reactionsCollection.findOne({
+          auctionId,
+          userId,
+        });
+
+        if (existingReaction) {
+          // If reactionType is null, remove the reaction
+          if (reactionType === null) {
+            const result = await reactionsCollection.deleteOne({
+              auctionId,
+              userId,
+            });
+            return res.send({
+              success: true,
+              message: "Reaction removed",
+              result,
+            });
+          }
+
+          // Update existing reaction
+          const result = await reactionsCollection.updateOne(
+            { auctionId, userId },
+            { $set: { reactionType, updatedAt: new Date() } }
+          );
+
+          return res.send({
+            success: true,
+            message: "Reaction updated",
+            result,
+          });
+        } else {
+          // If reactionType is null, no need to create a new document
+          if (reactionType === null) {
+            return res.send({
+              success: true,
+              message: "No reaction to remove",
+            });
+          }
+
+          // Create new reaction
+          const result = await reactionsCollection.insertOne({
+            auctionId,
+            userId,
+            reactionType,
+            createdAt: new Date(),
+          });
+
+          return res.send({
+            success: true,
+            message: "Reaction added",
+            result,
+          });
+        }
+      } catch (error) {
+        console.error("Error handling reaction:", error);
+
+        // Handle duplicate key error (user trying to add multiple reactions)
+        if (error.code === 11000) {
+          return res.status(409).send({
+            success: false,
+            message: "You already reacted to this auction",
+          });
+        }
+
+        res.status(500).send({
+          success: false,
+          message: "Failed to process reaction",
+          error: error.message,
+        });
+      }
+    });
+
+    // GET: Retrieve reactions for an auction
+    app.get("/auction-reactions/:auctionId", async (req, res) => {
+      try {
+        const { auctionId } = req.params;
+        const { userId } = req.query;
+
+        // Get all reactions for this auction
+        const reactions = await reactionsCollection
+          .find({ auctionId })
+          .toArray();
+
+        // Count reactions by type
+        const reactionCounts = {
+          likes: reactions.filter((r) => r.reactionType === "likes").length,
+          loves: reactions.filter((r) => r.reactionType === "loves").length,
+          smiles: reactions.filter((r) => r.reactionType === "smiles").length,
+          wows: reactions.filter((r) => r.reactionType === "wows").length,
+          flags: reactions.filter((r) => r.reactionType === "flags").length,
+        };
+
+        // If userId is provided, get the user's reaction
+        let userReactions = [];
+        if (userId) {
+          const userReaction = reactions.find((r) => r.userId === userId);
+          if (userReaction) {
+            userReactions.push(userReaction);
+          }
+        }
+
+        res.send({
+          success: true,
+          reactionCounts,
+          totalReactions: reactions.length,
+          userReactions,
+        });
+      } catch (error) {
+        console.error("Error fetching reactions:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to fetch reactions",
+          error: error.message,
+        });
+      }
+    });
+
+    // GET: Get reaction statistics for all auctions
+    app.get("/auction-reactions-stats", async (req, res) => {
+      try {
+        // Aggregate to get total reactions by type
+        const stats = await reactionsCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$reactionType",
+                count: { $sum: 1 },
+              },
+            },
+          ])
+          .toArray();
+
+        // Format the results
+        const formattedStats = stats.reduce((acc, stat) => {
+          acc[stat._id] = stat.count;
+          return acc;
+        }, {});
+
+        // Get total auctions with reactions
+        const auctionsWithReactions = await reactionsCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$auctionId",
+              },
+            },
+            {
+              $count: "total",
+            },
+          ])
+          .toArray();
+
+        res.send({
+          success: true,
+          stats: formattedStats,
+          totalAuctionsWithReactions: auctionsWithReactions[0]?.total || 0,
+        });
+      } catch (error) {
+        console.error("Error fetching reaction stats:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to fetch reaction statistics",
+          error: error.message,
+        });
+      }
+    });
+
+    // GET: Get most reacted auctions
+    app.get("/most-reacted-auctions", async (req, res) => {
+      try {
+        const { limit = 5 } = req.query;
+
+        // Aggregate to get auctions with most reactions
+        const mostReactedAuctions = await reactionsCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$auctionId",
+                totalReactions: { $sum: 1 },
+                reactionTypes: {
+                  $push: "$reactionType",
+                },
+              },
+            },
+            {
+              $sort: { totalReactions: -1 },
+            },
+            {
+              $limit: parseInt(limit),
+            },
+          ])
+          .toArray();
+
+        // For each auction, count reaction types
+        const result = mostReactedAuctions.map((auction) => {
+          const reactionCounts = auction.reactionTypes.reduce((acc, type) => {
+            acc[type] = (acc[type] || 0) + 1;
+            return acc;
+          }, {});
+
+          return {
+            auctionId: auction._id,
+            totalReactions: auction.totalReactions,
+            reactionCounts,
+          };
+        });
+
+        res.send({
+          success: true,
+          mostReactedAuctions: result,
+        });
+      } catch (error) {
+        console.error("Error fetching most reacted auctions:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to fetch most reacted auctions",
+          error: error.message,
+        });
+      }
+    });
+
+    // DELETE: Remove all reactions for an auction (admin only)
+    app.delete("/auction-reactions/:auctionId", async (req, res) => {
+      try {
+        const { auctionId } = req.params;
+
+        // In a real app, you would verify admin permissions here
+        // if (!isAdmin(req.user)) {
+        //   return res.status(403).send({ success: false, message: "Unauthorized" });
+        // }
+
+        const result = await reactionsCollection.deleteMany({ auctionId });
+
+        res.send({
+          success: true,
+          message: `Deleted ${result.deletedCount} reactions for auction ${auctionId}`,
+          result,
+        });
+      } catch (error) {
+        console.error("Error deleting reactions:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to delete reactions",
+          error: error.message,
+        });
+      }
+    });
 
     // JWT Routes
     app.post("/jwt", async (req, res) => {
@@ -748,7 +1016,8 @@ async function run() {
     // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
-      const { accountBalance } = req.body;
+      const { accountBalance, transaction } = req.body;
+      console.log("transaction : ", transaction);
 
       if (!accountBalance) {
         return res
@@ -758,7 +1027,7 @@ async function run() {
 
       const updatedUser = await userCollection.updateOne(
         { _id: new ObjectId(userId) },
-        { $set: { accountBalance } }
+        { $set: { accountBalance }, $push: { transactions: transaction } }
       );
 
       if (updatedUser.modifiedCount > 0) {
@@ -818,9 +1087,13 @@ async function run() {
 
     // Reports API
     app.post("/reports", async (req, res) => {
-      const reports = req.body;
-      const result = await reportsCollection.insertOne(reports);
-      res.send({ success: true, result });
+      try {
+        const reports = req.body;
+        const result = await reportsCollection.insertOne(reports);
+        res.send({ success: true, result });
+      } catch (error) {
+        res.status(500).send("internal server error", error);
+      }
     });
     // GET a report(Joyeta)
     app.get("/reports", async (req, res) => {
@@ -849,6 +1122,78 @@ async function run() {
         res
           .status(500)
           .send({ message: "Failed to submit report", error: error.message });
+      }
+    });
+
+    // GET route cover profile
+    app.get("/cover/:userId", async (req, res) => {
+      const userId = req.params.userId;
+      try {
+        const user = await userCollection.findOne({ uid: userId });
+        res.send({ image: user?.cover || "" });
+      } catch (err) {
+        res.status(500).send({ error: "Failed to fetch user cover." });
+      }
+    });
+    // PATCH cover
+    app.patch("/cover", async (req, res) => {
+      const { userId, image } = req.body;
+
+      if (!userId || !image) {
+        return res
+          .status(400)
+          .send({ error: "Missing userId or image in request body." });
+      }
+
+      try {
+        const result = await userCollection.updateOne(
+          { uid: userId }, // Replace "uid" with your actual user field (e.g., _id, email, etc.)
+          { $set: { cover: image } },
+          { upsert: false } // Set to true only if you want to create the user doc if not found
+        );
+
+        if (result.modifiedCount > 0) {
+          res.send({
+            success: true,
+            message: "Cover image updated successfully.",
+          });
+        } else {
+          res.status(404).send({
+            success: false,
+            message: "User not found or cover unchanged.",
+          });
+        }
+      } catch (error) {
+        console.error("Error updating cover image:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Internal Server Error" });
+      }
+    });
+
+    //feedback get method
+
+    app.get("/feedbacks", async (req, res) => {
+      try {
+        const feedbacks = await feedbackCollection.find().toArray();
+        res.status(200).send(feedbacks);
+      } catch (error) {
+        res.status(500).send("internal server error", error);
+      }
+    });
+
+    //feedback post api
+
+    app.post("/feedback", async (req, res) => {
+      try {
+        const feedback = req.body;
+        if (!feedback) {
+          return res.status(400).send({ message: "Feedback data is required" });
+        }
+        const result = await feedbackCollection.insertOne(feedback);
+        res.status(200).send({ success: true, result });
+      } catch (error) {
+        res.status(500).send("internal server error", error);
       }
     });
 

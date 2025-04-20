@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-// const cookieParser = require("cookie-parser");
+const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
@@ -26,7 +26,7 @@ app.use(
   })
 );
 app.use(express.json());
-// app.use(cookieParser());
+app.use(cookieParser());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -41,7 +41,6 @@ async function run() {
   try {
     await client.connect();
     console.log("Connected to MongoDB");
-
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
@@ -54,58 +53,41 @@ async function run() {
     const reactionsCollection = db.collection("auctionReactions");
     const feedbackCollection = db.collection("feedbacks");
 
-    app.post('/jwt', async (req, res) => {
-      const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: '100h' });
-      res.send({ token });
-    })
-
-
+    // JWT Middleware
     const verifyToken = (req, res, next) => {
-      const authHeader = req.headers.authorization;
-
-      if (!authHeader) {
-        return res.status(401).send({ message: "Unauthorized request - No token" });
-      }
-
-      const token = authHeader.split(" ")[1];
-
-      jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
-        if (error) {
-          return res.status(401).send({ message: "Forbidden access - Invalid token" });
-        }
-
-        req.decoded = decoded;
+      const token =
+        req?.cookies?.token || req.headers["authorization"]?.split(" ")[1];
+      if (!token)
+        return res.status(401).send({ message: "Unauthorized access" });
+      jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+        if (err)
+          return res.status(401).send({ message: "Unauthorized access" });
+        req.decodedUser = decoded;
         next();
       });
     };
 
-
-
     // Verify Admin Middleware
     const verifyAdmin = async (req, res, next) => {
-      const email = req.decoded.email;
+      const email = req.decodedUser.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isAdmin = user?.role === 'admin';
-      if (!isAdmin) {
-        return res.status(403).send({ message: 'forbidden access' })
-      }
+      const isAdmin = user?.role === "admin";
+      if (!isAdmin)
+        return res.status(401).send({ message: "Unauthorized request" });
       next();
-    }
-
+    };
 
     // Verify Seller Middleware
     const verifySeller = async (req, res, next) => {
-      const email = req.decoded.email;
+      const email = req.decodedUser.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isSeller = user?.role === 'seller';
-      if (!isSeller) {
-        return res.status(403).send({ message: 'forbidden access' })
-      }
+      const isSeller = user?.role === "seller";
+      if (!isSeller)
+        return res.status(401).send({ message: "Unauthorized request" });
       next();
-    }
+    };
 
     // Socket.IO Logic for Chat and Notifications
     io.on("connection", (socket) => {
@@ -750,27 +732,22 @@ async function run() {
       }
     });
 
-    // // JWT Routes
-    // app.post("/jwt", async (req, res) => {
-    //   const user = req.body;
-    //   const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
-    //     expiresIn: "1d",
-    //   });
-    //   res
-    //     .cookie("token", token, { httpOnly: true, secure: false })
-    //     .send({ success: true });
-    // });
+    // JWT Routes
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+        expiresIn: "1d",
+      });
+      res
+        .cookie("token", token, { httpOnly: true, secure: false })
+        .send({ success: true });
+    });
 
     app.post("/logout", (req, res) => {
       res
-        .clearCookie("token", {
-          httpOnly: true,
-          secure: false, // Only false in dev/localhost, true in production
-          sameSite: "lax",
-        })
-        .send({ success: true, message: "Logged out successfully." });
+        .clearCookie("token", { httpOnly: true, secure: false })
+        .send({ success: true });
     });
-
 
     // Seller Request APIs
     app.get("/sellerRequest/:becomeSellerStatus", async (req, res) => {
@@ -969,7 +946,7 @@ async function run() {
       }
     });
 
-    app.post("/auctions", verifyToken, verifySeller, async (req, res) => {
+    app.post("/auctions", async (req, res) => {
       const auction = req.body;
       const result = await auctionCollection.insertOne(auction);
       res.send(result);
@@ -1039,17 +1016,17 @@ async function run() {
     // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
-      const { accountBalance } = req.body;
-
-      if (!accountBalance) {
-        return res
-          .status(400)
-          .send({ success: false, message: "accountBalance is required!" });
+      const { accountBalance, transaction } = req.body;
+      if (!accountBalance || !transaction) {
+        return res.status(400).send({
+          success: false,
+          message: "valid information is required!",
+        });
       }
 
       const updatedUser = await userCollection.updateOne(
         { _id: new ObjectId(userId) },
-        { $set: { accountBalance } }
+        { $set: { accountBalance }, $push: { transactions: transaction } }
       );
 
       if (updatedUser.modifiedCount > 0) {
