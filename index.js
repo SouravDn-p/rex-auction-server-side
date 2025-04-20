@@ -952,7 +952,50 @@ async function run() {
       const result = await auctionCollection.insertOne(auction);
       res.send(result);
     });
-
+    app.patch("/auctions/payment/:id", async (req, res) => {
+      try {
+        const { id } = req.params
+        const { payment, paymentDetails } = req.body
+  
+        if (!payment) {
+          return res.status(400).send({
+            success: false,
+            message: "Payment status is required",
+          })
+        }
+  
+        const filter = { _id: new ObjectId(id) }
+        const updateDoc = {
+          $set: {
+            payment,
+            paymentDetails,
+            paymentDate: new Date(),
+          },
+        }
+  
+        const result = await auctionCollection.updateOne(filter, updateDoc)
+  
+        if (result.matchedCount === 0) {
+          return res.status(404).send({
+            success: false,
+            message: "Auction not found",
+          })
+        }
+  
+        res.send({
+          success: true,
+          message: "Payment status updated successfully",
+          result,
+        })
+      } catch (error) {
+        console.error("Error updating payment status:", error)
+        res.status(500).send({
+          success: false,
+          message: "Failed to update payment status",
+          error: error.message,
+        })
+      }
+    })
     app.patch("/auctions/:id", async (req, res) => {
       const auctionId = req.params.id;
       const { status } = req.body;
