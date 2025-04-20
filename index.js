@@ -268,19 +268,23 @@ async function run() {
       const initiate = {
         store_id: "rexau67f77422a8374",
         store_passwd: "rexau67f77422a8374@ssl",
-        total_amount: Number(paymentData.paymentPrice || 0),
+        total_amount: Number(paymentData.price || 0),
+        price: paymentData.price,
+        serviceFee: paymentData.serviceFee,
+        buyerInfo: paymentData.buyerInfo,
         tran_id: trxid,
         currency: "BDT",
+        auctionId: paymentData.auctionId,
         success_url: "http://localhost:5000/success-payment",
         fail_url: "http://localhost:5173/fail",
         cancel_url: "http://localhost:5173/cancel",
         ipn_url: "http://localhost:5000/ipn-success-payment",
         shipping_method: "Courier",
-        product_name: "Computer.",
-        product_category: "Electronic",
-        product_profile: "general",
-        cus_name: "Customer Name",
-        cus_email: `${paymentData.email}`,
+        product_name: `${paymentData.name}`,
+        product_category: `${paymentData.itemInfo.category}`,
+        product_profile: `${paymentData.buyerInfo.photoUrl}`,
+        cus_name: `${paymentData.buyerInfo.name}`,
+        cus_email: `${paymentData.buyerInfo.email}`,
         cus_add1: "Dhaka",
         cus_add2: "Dhaka",
         cus_city: "Dhaka",
@@ -306,7 +310,7 @@ async function run() {
           "Content-Type": "application/x-www-form-urlencoded",
         },
       });
-      console.log(iniResponse);
+      console.log(iniResponse,"response");
 
       await SSLComCollection.insertOne(paymentData);
 
@@ -337,6 +341,30 @@ async function run() {
       res.redirect("http://localhost:5173/dashboard/payment");
       console.log(updateResult, "update result");
     });
+
+
+      
+    
+    
+    app.post('/create-sslCom', async (req, res) => {
+        const paymentData = req.body;
+        console.log(paymentData);  
+  } )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // Chat API Endpoints
     app.get(
@@ -1048,7 +1076,50 @@ async function run() {
       const result = await auctionCollection.insertOne(auction);
       res.send(result);
     });
-
+    app.patch("/auctions/payment/:id", async (req, res) => {
+      try {
+        const { id } = req.params
+        const { payment, paymentDetails } = req.body
+  
+        if (!payment) {
+          return res.status(400).send({
+            success: false,
+            message: "Payment status is required",
+          })
+        }
+  
+        const filter = { _id: new ObjectId(id) }
+        const updateDoc = {
+          $set: {
+            payment,
+            paymentDetails,
+            paymentDate: new Date(),
+          },
+        }
+  
+        const result = await auctionCollection.updateOne(filter, updateDoc)
+  
+        if (result.matchedCount === 0) {
+          return res.status(404).send({
+            success: false,
+            message: "Auction not found",
+          })
+        }
+  
+        res.send({
+          success: true,
+          message: "Payment status updated successfully",
+          result,
+        })
+      } catch (error) {
+        console.error("Error updating payment status:", error)
+        res.status(500).send({
+          success: false,
+          message: "Failed to update payment status",
+          error: error.message,
+        })
+      }
+    })
     app.patch("/auctions/:id", async (req, res) => {
       const auctionId = req.params.id;
       const { status } = req.body;
@@ -1200,6 +1271,50 @@ async function run() {
         res
           .status(500)
           .send({ message: "Failed to fetch reports", error: error.message });
+      }
+    });
+
+    // POST a report (Joyeta)
+    app.post("/reports", async (req, res) => {
+      try {
+        const report = req.body;
+
+        if (!report || Object.keys(report).length === 0) {
+          return res.status(400).send({ message: "Report data is required" });
+        }
+
+        const result = await reportCollection.insertOne(report);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ message: "Failed to submit report", error: error.message });
+      }
+    });
+
+    //feedback get method
+
+    app.get("/feedbacks", async (req, res) => {
+      try {
+        const feedbacks = await feedbackCollection.find().toArray();
+        res.status(200).send(feedbacks);
+      } catch (error) {
+        res.status(500).send("internal server error", error);
+      }
+    });
+
+    //feedback post api 
+
+    app.post("/feedback", async (req, res) => {
+      try {
+        const feedback = req.body;
+        if (!feedback) {
+          return res.status(400).send({ message: "Feedback data is required" });
+        }
+        const result = await feedbackCollection.insertOne(feedback);
+        res.status(200).send({ success: true, result });
+      } catch (error) {
+        res.status(500).send("internal server error", error);
       }
     });
 
