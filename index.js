@@ -320,6 +320,19 @@ async function run() {
       // console.log(gatewayURL);
       res.send({ gatewayURL });
     });
+    // Payment APIs with rex wallet
+    app.post("/rexPayment", async (req, res) => {
+      const paymentData = req.body;
+      try {
+        const result = await SSLComCollection.insertOne(paymentData);
+        console.log("data ", paymentData);
+        res.status(201).send({ success: true, insertedId: result.insertedId });
+      } catch (error) {
+        console.error("Payment Error:", error);
+        res.status(500).send({ message: "Failed to process payment" });
+      }
+    });
+
     app.post("/success-payment", async (req, res) => {
       // success payment data
       const paymentSuccess = req.body;
