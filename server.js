@@ -1060,9 +1060,9 @@ async function run() {
     // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
-      const { accountBalance } = req.body;
+      const { accountBalance, transaction } = req.body;
 
-      if (!accountBalance) {
+      if (!accountBalance && !transaction) {
         return res
           .status(400)
           .send({ success: false, message: "accountBalance is required!" });
@@ -1070,7 +1070,7 @@ async function run() {
 
       const updatedUser = await userCollection.updateOne(
         { _id: new ObjectId(userId) },
-        { $set: { accountBalance } }
+        { $set: { accountBalance }, $push: { transactions: transaction } }
       );
 
       if (updatedUser.modifiedCount > 0) {

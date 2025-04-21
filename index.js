@@ -8,8 +8,10 @@ const { Server } = require("socket.io");
 const http = require("http");
 const axios = require("axios");
 const port = process.env.PORT || 5000;
+const multer = require("multer");
 const app = express();
 const server = http.createServer(app);
+const upload = multer({ storage: multer.memoryStorage() });
 const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://rex-auction.web.app"],
@@ -55,7 +57,7 @@ async function run() {
     const feedbackCollection = db.collection("feedbacks");
     const CoverCollection = db.collection("cover");
     const SSLComCollection = db.collection("paymentsWithSSL");
-   
+
     // SSLCOMMERZE ID
 
     //     Store ID: rexau67f77422a8374
@@ -261,7 +263,7 @@ async function run() {
     app.post("/paymentsWithSSL", async (req, res) => {
       const paymentData = req.body;
       // const result = await SSLComCollection.insertOne(paymentData)
-      console.log("data " , paymentData);
+      console.log("data ", paymentData);
 
       const trxid = new ObjectId().toString();
       paymentData.trxid = trxid;
@@ -310,7 +312,7 @@ async function run() {
           "Content-Type": "application/x-www-form-urlencoded",
         },
       });
-      console.log(iniResponse,"response");
+      console.log(iniResponse, "response");
 
       await SSLComCollection.insertOne(paymentData);
 
@@ -342,29 +344,10 @@ async function run() {
       console.log(updateResult, "update result");
     });
 
-
-      
-    
-    
-    app.post('/create-sslCom', async (req, res) => {
-        const paymentData = req.body;
-        console.log(paymentData);  
-  } )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    app.post("/create-sslCom", async (req, res) => {
+      const paymentData = req.body;
+      console.log(paymentData);
+    });
 
     // Chat API Endpoints
     app.get(
@@ -1210,6 +1193,35 @@ async function run() {
       }
     });
 
+    // Specific user.recentActivity  update
+    app.patch("/updateUserRecentActivity/:id", async (req, res) => {
+      const userId = req.params.id;
+      const { bidData } = req.body;
+
+      if (!bidData) {
+        return res
+          .status(400)
+          .send({ success: false, message: "valid data is required!" });
+      }
+
+      const updatedUser = await userCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $push: { recentActivity: bidData } }
+      );
+
+      if (updatedUser.modifiedCount > 0) {
+        res.status(201).send({
+          success: true,
+          message: "User data updated successfully!",
+        });
+      } else {
+        res.status(404).send({
+          success: false,
+          message: "User not found or data not changed!",
+        });
+      }
+    });
+
     // Live Bidding APIs
     app.get("/live-bid/top", async (req, res) => {
       const { auctionId } = req.query;
@@ -1369,99 +1381,98 @@ async function run() {
     //   res.status(200).send({ success: true, result });
     // });
 
-      app.patch("/cover", async (req, res) => {
+    app.patch("/cover", async (req, res) => {
       const userId = req.params.id;
       const { cover } = req.body;
       const filter = { _id: new ObjectId(userId) };
-      const updateDoc = { $set: { cover:cover } };
+      const updateDoc = { $set: { cover: cover } };
       const result = await userCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
-// Update user profile
-app.patch("/user/:email", async (req, res) => {
-  const email = req.params.email;
-  const updates = req.body;
-  // List of allowed fields to update
-  const allowedFields = [
-    "name",
-    "email",
-    "photo",
-    "role",
-    "AuctionsWon",
-    "ActiveBids",
-    "TotalSpent",
-    "accountBalance",
-    "BiddingHistory",
-    "onGoingBid",
-    "Location",
-    "memberSince",
-    "recentActivity",
-    "watchingNow",
-  ];
-  
-  // Filter updates to only include allowed fields
-  const filteredUpdates = Object.keys(updates)
-    .filter((key) => allowedFields.includes(key))
-    .reduce((obj, key) => {
-      obj[key] = updates[key];
-      return obj;
-    }, {});
+    // Update user profile
+    app.patch("/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const updates = req.body;
+      // List of allowed fields to update
+      const allowedFields = [
+        "name",
+        "email",
+        "photo",
+        "role",
+        "AuctionsWon",
+        "ActiveBids",
+        "TotalSpent",
+        "accountBalance",
+        "BiddingHistory",
+        "onGoingBid",
+        "Location",
+        "memberSince",
+        "recentActivity",
+        "watchingNow",
+      ];
 
-  const filter = { email: email };
-  const updateDoc = { $set: filteredUpdates };
+      // Filter updates to only include allowed fields
+      const filteredUpdates = Object.keys(updates)
+        .filter((key) => allowedFields.includes(key))
+        .reduce((obj, key) => {
+          obj[key] = updates[key];
+          return obj;
+        }, {});
 
-  try {
-    const result = await userCollection.updateOne(filter, updateDoc);
-    if (result.matchedCount === 0) {
-      return res.status(404).send({ message: "User not found" });
-    }
-    const updatedUser = await userCollection.findOne(filter);
-    res.send(updatedUser);
-  } catch (err) {
-    res.status(500).send({ message: "Failed to update profile" });
-  }
-});
+      const filter = { email: email };
+      const updateDoc = { $set: filteredUpdates };
 
-// Update cover photo
-app.patch("/cover/:id", async (req, res) => {
-  const userId = req.params.id;
-  const { cover } = req.body;
-  const filter = { _id: new ObjectId(userId) };
-  const updateDoc = { $set: { cover: cover } };
-  try {
-    const result = await userCollection.updateOne(filter, updateDoc);
-    if (result.matchedCount === 0) {
-      return res.status(404).send({ message: "User not found" });
-    }
-    const updatedUser = await userCollection.findOne(filter);
-    res.send(updatedUser);
-  } catch (err) {
-    res.status(500).send({ message: "Failed to update cover" });
-  }
-});
-
-// Upload photo
-app.post("/upload-photo", upload.single("photo"), async (req, res) => {
-  try {
-    const photo = req.file;
-    if (!photo) {
-      return res.status(400).send({ message: "No photo uploaded" });
-    }
-    // Upload to Cloudinary
-    const uploadResult = await new Promise((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        { resource_type: "image" },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
+      try {
+        const result = await userCollection.updateOne(filter, updateDoc);
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
         }
-      ).end(photo.buffer);
+        const updatedUser = await userCollection.findOne(filter);
+        res.send(updatedUser);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update profile" });
+      }
     });
-    res.send({ url: uploadResult.secure_url });
-  } catch (err) {
-    res.status(500).send({ message: "Failed to upload photo" });
-  }
-});
+
+    // Update cover photo
+    app.patch("/cover/:id", async (req, res) => {
+      const userId = req.params.id;
+      const { cover } = req.body;
+      const filter = { _id: new ObjectId(userId) };
+      const updateDoc = { $set: { cover: cover } };
+      try {
+        const result = await userCollection.updateOne(filter, updateDoc);
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
+        }
+        const updatedUser = await userCollection.findOne(filter);
+        res.send(updatedUser);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update cover" });
+      }
+    });
+
+    // Upload photo
+    app.post("/upload-photo", upload.single("photo"), async (req, res) => {
+      try {
+        const photo = req.file;
+        if (!photo) {
+          return res.status(400).send({ message: "No photo uploaded" });
+        }
+        // Upload to Cloudinary
+        const uploadResult = await new Promise((resolve, reject) => {
+          cloudinary.uploader
+            .upload_stream({ resource_type: "image" }, (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            })
+            .end(photo.buffer);
+        });
+        res.send({ url: uploadResult.secure_url });
+      } catch (err) {
+        res.status(500).send({ message: "Failed to upload photo" });
+      }
+    });
 
     app.get("/cover", async (req, res) => {
       try {
@@ -1474,8 +1485,8 @@ app.post("/upload-photo", upload.single("photo"), async (req, res) => {
     // app.get("/cover/:userId", async (req, res) => {
     //   try {
     //     const userId = req.query.userId; // Get userId from query parameters
-    //     const query = { userId: userId }; 
-    
+    //     const query = { userId: userId };
+
     //     const result = await CoverCollection.findOne(query);
     //     if (result) {
     //       res.status(200).send(result);
