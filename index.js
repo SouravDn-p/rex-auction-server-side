@@ -278,7 +278,7 @@ async function run() {
         currency: "BDT",
         auctionId: paymentData.auctionId,
         success_url: "http://localhost:5000/success-payment",
-        fail_url: "http://localhost:5173/fail",
+        fail_url: "http://localhost:5173/dashboard/paymentFailed",
         cancel_url: "http://localhost:5173/cancel",
         ipn_url: "http://localhost:5000/ipn-success-payment",
         shipping_method: "Courier",
@@ -319,6 +319,43 @@ async function run() {
       const gatewayURL = iniResponse?.data?.GatewayPageURL;
       // console.log(gatewayURL);
       res.send({ gatewayURL });
+    });
+    app.post("/success-payment", async (req, res) => {
+      // success payment data
+      const paymentSuccess = req.body;
+      // console.log(paymentSuccess,"payment success");
+      const { data } = await axios.get(
+        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
+      );
+      console.log(data);
+      if (data.status !== "VALID") {
+        return res.send({ message: "invalid payment" });
+      }
+      // update the payment status in the database
+      const updateResult = await SSLComCollection.updateOne(
+        { trxid: paymentSuccess.tran_id },
+        {
+          $set: {
+            PaymentStatus: "success",
+          },
+        }
+      );
+      res.redirect(
+        `http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`
+      );
+      console.log(updateResult, "update result");
+    });
+
+    // Payment data getting
+    app.get("/payments", async (req, res) => {
+      const users = await SSLComCollection.find().toArray();
+      res.send(users);
+    });
+
+    app.get("/payments/:trxid", async (req, res) => {
+      const trxid = req.params.trxid;
+      const payment = await SSLComCollection.findOne({ trxid: trxid });
+      res.send(payment);
     });
     app.post("/success-payment", async (req, res) => {
       // success payment data
