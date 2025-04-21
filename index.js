@@ -334,11 +334,11 @@ async function run() {
         { trxid: paymentSuccess.tran_id },
         {
           $set: {
-            status: "success",
+            PaymentStatus: "success",
           },
         }
       );
-      res.redirect("http://localhost:5173/dashboard/payment");
+      res.redirect("http://localhost:5173/dashboard");
       console.log(updateResult, "update result");
     });
 
@@ -350,12 +350,6 @@ async function run() {
         const paymentData = req.body;
         console.log(paymentData);  
   } )
-
-
-
-
-
-
 
 
 
