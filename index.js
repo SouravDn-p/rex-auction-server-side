@@ -276,7 +276,7 @@ async function run() {
         currency: "BDT",
         auctionId: paymentData.auctionId,
         success_url: "http://localhost:5000/success-payment",
-        fail_url: "http://localhost:5173/fail",
+        fail_url: "http://localhost:5173/dashboard/paymentFailed",
         cancel_url: "http://localhost:5173/cancel",
         ipn_url: "http://localhost:5000/ipn-success-payment",
         shipping_method: "Courier",
@@ -338,20 +338,21 @@ async function run() {
           },
         }
       );
-      res.redirect("http://localhost:5173/dashboard");
+      res.redirect(`http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`);
       console.log(updateResult, "update result");
     });
 
+    // Payment data getting
+    app.get("/payments", async (req, res) => {
+      const users = await SSLComCollection.find().toArray();
+      res.send(users);
+    });
 
-      
-    
-    
-    app.post('/create-sslCom', async (req, res) => {
-        const paymentData = req.body;
-        console.log(paymentData);  
-  } )
-
-
+    app.get("/payments/:trxid", async (req, res) => {
+      const trxid = req.params.trxid; 
+      const payment = await SSLComCollection.findOne({  trxid:trxid });
+      res.send(payment);
+    });
 
 
 
