@@ -57,6 +57,7 @@ async function run() {
     const feedbackCollection = db.collection("feedbacks");
     const CoverCollection = db.collection("cover");
     const SSLComCollection = db.collection("paymentsWithSSL");
+    const endedAuctionCollection = db.collection("endedAuctionsList");
 
     // SSLCOMMERZE ID
 
@@ -987,49 +988,72 @@ async function run() {
     app.get("/bid-history/:email", async (req, res) => {
       try {
         const { email } = req.params;
-    
+
         const user = await userCollection.findOne({ email });
-    
+
         if (!user?.recentActivity || user.recentActivity.length === 0) {
           return res.status(200).json([]);
         }
-    
-        const auctIDs = user.recentActivity.map((item) => new ObjectId(item.auctionId));
-        const auctions = await auctionCollection.find({ _id: { $in: auctIDs } }).toArray();
-    
+
+        const auctIDs = user.recentActivity.map(
+          (item) => new ObjectId(item.auctionId)
+        );
+        const auctions = await auctionCollection
+          .find({ _id: { $in: auctIDs } })
+          .toArray();
+
         const now = new Date();
-    
+
         const bidHistory = auctions.map((auction) => {
           const endTime = new Date(auction.endTime);
           const bids = auction.bids || [];
-    
-          //  Get the user's bid from recentActivity 
-          const recentActivity = user.recentActivity.find((activity) => activity.auctionId.toString() === auction._id.toString());
-          const recentBidAmount = recentActivity ? recentActivity.amount : 0;
-    
-          //  Find user's position in topBidders
-          const sortedTopBidders = [...auction.topBidders].sort((a, b) => b.amount - a.amount);
-          const position = sortedTopBidders.findIndex((bid) => bid.email === email) + 1 || "N/A";
-    
-          //  Get bid time from the user's bid 
+
+          // Find recent activity
+          const recentActivity = user.recentActivity.find(
+            (activity) =>
+              activity.auctionId.toString() === auction._id.toString()
+          );
+
+          const recentBidAmount = recentActivity?.amount || 0;
+          const bidTime = recentActivity?.time || "N/A";
+
+          // Calculate highest bid by user
           const userBids = bids.filter((bid) => bid.email === email);
-          const bidTime = userBids.length > 0 ? userBids[0]?.time : "N/A";
-    
-          // Combine recentBidAmount and highestUserBid
-          const highestUserBid = Math.max(recentBidAmount, ...userBids.map(bid => bid.amount)) || 0;
-    
+          const highestUserBid =
+            Math.max(recentBidAmount, ...userBids.map((bid) => bid.amount)) ||
+            0;
+
+          // Get position based on topBidders amount
+          const sortedTopBidders = [...(auction.topBidders || [])].sort(
+            (a, b) => b.amount - a.amount
+          );
+
+          let userPosition = "N/A";
+          if (sortedTopBidders.length > 0 && highestUserBid > 0) {
+            const uniqueAmounts = [
+              ...new Set(sortedTopBidders.map((bidder) => bidder.amount)),
+            ];
+            uniqueAmounts.sort((a, b) => b - a);
+            const positionIndex = uniqueAmounts.findIndex(
+              (amount) => amount === highestUserBid
+            );
+            if (positionIndex !== -1) {
+              userPosition = positionIndex + 1;
+            }
+          }
+
           return {
             auctionId: auction._id,
-            auctionTitle: auction.name, 
+            auctionTitle: auction.name,
             bidder: email,
-            bidAmount: highestUserBid || 0, 
+            bidAmount: highestUserBid,
             time: bidTime,
             status: now > endTime ? "End" : "Ongoing",
             auctionImage: auction.images?.[0] || "",
-            position,
+            position: userPosition,
           };
         });
-    
+
         res.status(200).json(bidHistory);
       } catch (error) {
         console.error("Error fetching bid history:", error);
@@ -1214,12 +1238,35 @@ async function run() {
       const result = await auctionCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
-
     app.delete("/auctions/:id", async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const result = await auctionCollection.deleteOne(filter);
-      res.send(result);
+      try {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const result = await auctionCollection.deleteOne(filter);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error });
+      }
+    });
+
+    //ended auctions api
+    app.get("/endedAuctions", async (req, res) => {
+      try {
+        const result = await endedAuctionCollection.find().toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error });
+      }
+    });
+
+    app.post("/endedAuctions", async (req, res) => {
+      try {
+        const auction = req.body;
+        const result = await endedAuctionCollection.insertOne(auction);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "internal server error", error });
+      }
     });
 
     //auction er top bidders update
