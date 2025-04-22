@@ -984,6 +984,59 @@ async function run() {
       res.send(users);
     });
 
+    app.get("/bid-history/:email", async (req, res) => {
+      try {
+        const { email } = req.params;
+    
+        const user = await userCollection.findOne({ email });
+    
+        if (!user?.recentActivity || user.recentActivity.length === 0) {
+          return res.status(200).json([]);
+        }
+    
+        const auctIDs = user.recentActivity.map((item) => new ObjectId(item.auctionId));
+        const auctions = await auctionCollection.find({ _id: { $in: auctIDs } }).toArray();
+    
+        const now = new Date();
+    
+        const bidHistory = auctions.map((auction) => {
+          const endTime = new Date(auction.endTime);
+          const bids = auction.bids || [];
+    
+          //  Get the user's bid from recentActivity 
+          const recentActivity = user.recentActivity.find((activity) => activity.auctionId.toString() === auction._id.toString());
+          const recentBidAmount = recentActivity ? recentActivity.amount : 0;
+    
+          //  Find user's position in topBidders
+          const sortedTopBidders = [...auction.topBidders].sort((a, b) => b.amount - a.amount);
+          const position = sortedTopBidders.findIndex((bid) => bid.email === email) + 1 || "N/A";
+    
+          //  Get bid time from the user's bid 
+          const userBids = bids.filter((bid) => bid.email === email);
+          const bidTime = userBids.length > 0 ? userBids[0]?.time : "N/A";
+    
+          // Combine recentBidAmount and highestUserBid
+          const highestUserBid = Math.max(recentBidAmount, ...userBids.map(bid => bid.amount)) || 0;
+    
+          return {
+            auctionId: auction._id,
+            auctionTitle: auction.name, 
+            bidder: email,
+            bidAmount: highestUserBid || 0, 
+            time: bidTime,
+            status: now > endTime ? "End" : "Ongoing",
+            auctionImage: auction.images?.[0] || "",
+            position,
+          };
+        });
+    
+        res.status(200).json(bidHistory);
+      } catch (error) {
+        console.error("Error fetching bid history:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+      }
+    });
+
     app.get("/user/:email", async (req, res) => {
       try {
         const email = req.params.email;
