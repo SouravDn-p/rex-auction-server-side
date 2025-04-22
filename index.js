@@ -2,14 +2,16 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const cookieParser = require("cookie-parser");
+// const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
 const axios = require("axios");
 const port = process.env.PORT || 5000;
+const multer = require("multer");
 const app = express();
 const server = http.createServer(app);
+const upload = multer({ storage: multer.memoryStorage() });
 const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://rex-auction.web.app"],
@@ -26,7 +28,7 @@ app.use(
   })
 );
 app.use(express.json());
-app.use(cookieParser());
+// app.use(cookieParser());
 app.use(express.urlencoded());
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -55,7 +57,8 @@ async function run() {
     const feedbackCollection = db.collection("feedbacks");
     const CoverCollection = db.collection("cover");
     const SSLComCollection = db.collection("paymentsWithSSL");
-   
+    const endedAuctionCollection = db.collection("endedAuctionsList");
+
     // SSLCOMMERZE ID
 
     //     Store ID: rexau67f77422a8374
@@ -69,41 +72,58 @@ async function run() {
     // Validation API: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?wsdl
     // Validation API (Web Service) name: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php
 
+    app.post('/jwt', async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: '1h' });
+      res.send({ token });
+    });
+
+
+
     // JWT Middleware
     const verifyToken = (req, res, next) => {
-      const token =
-        req?.cookies?.token || req.headers["authorization"]?.split(" ")[1];
-      if (!token)
-        return res.status(401).send({ message: "Unauthorized access" });
+      const authHeader = req.headers.authorization;
+
+      if (!authHeader) {
+        return res.status(401).send({ message: 'Unauthorized: No token provided' });
+      }
+
+      const token = authHeader.split(' ')[1];
+
       jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
-        if (err)
-          return res.status(401).send({ message: "Unauthorized access" });
-        req.decodedUser = decoded;
+        if (err) {
+          return res.status(403).send({ message: 'Forbidden: Invalid or expired token' });
+        }
+
+        req.decoded = decoded;
         next();
       });
     };
 
+
     // Verify Admin Middleware
     const verifyAdmin = async (req, res, next) => {
-      const email = req.decodedUser.email;
+      const email = req.decoded.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isAdmin = user?.role === "admin";
-      if (!isAdmin)
-        return res.status(401).send({ message: "Unauthorized request" });
+      const isAdmin = user?.role === 'admin';
+      if (!isAdmin) {
+        return res.status(403).send({ message: 'forbidden access' })
+      }
       next();
-    };
+    }
 
     // Verify Seller Middleware
-    const verifySeller = async (req, res, next) => {
-      const email = req.decodedUser.email;
+    const verifyseller = async (req, res, next) => {
+      const email = req.decoded.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
-      const isSeller = user?.role === "seller";
-      if (!isSeller)
-        return res.status(401).send({ message: "Unauthorized request" });
+      const isSeller = user?.role === 'seller';
+      if (!isSeller) {
+        return res.status(403).send({ message: 'forbidden access' })
+      }
       next();
-    };
+    }
 
     // Socket.IO Logic for Chat and Notifications
     io.on("connection", (socket) => {
@@ -261,7 +281,7 @@ async function run() {
     app.post("/paymentsWithSSL", async (req, res) => {
       const paymentData = req.body;
       // const result = await SSLComCollection.insertOne(paymentData)
-      console.log("data " , paymentData);
+      console.log("data ", paymentData);
 
       const trxid = new ObjectId().toString();
       paymentData.trxid = trxid;
@@ -276,7 +296,7 @@ async function run() {
         currency: "BDT",
         auctionId: paymentData.auctionId,
         success_url: "http://localhost:5000/success-payment",
-        fail_url: "http://localhost:5173/fail",
+        fail_url: "http://localhost:5173/dashboard/paymentFailed",
         cancel_url: "http://localhost:5173/cancel",
         ipn_url: "http://localhost:5000/ipn-success-payment",
         shipping_method: "Courier",
@@ -310,13 +330,63 @@ async function run() {
           "Content-Type": "application/x-www-form-urlencoded",
         },
       });
-      console.log(iniResponse,"response");
+      console.log(iniResponse, "response");
 
       await SSLComCollection.insertOne(paymentData);
 
       const gatewayURL = iniResponse?.data?.GatewayPageURL;
       // console.log(gatewayURL);
       res.send({ gatewayURL });
+    });
+    // Payment APIs with rex wallet
+    app.post("/rexPayment", async (req, res) => {
+      const paymentData = req.body;
+      try {
+        const result = await SSLComCollection.insertOne(paymentData);
+        console.log("data ", paymentData);
+        res.status(201).send({ success: true, insertedId: result.insertedId });
+      } catch (error) {
+        console.error("Payment Error:", error);
+        res.status(500).send({ message: "Failed to process payment" });
+      }
+    });
+
+    app.post("/success-payment", async (req, res) => {
+      // success payment data
+      const paymentSuccess = req.body;
+      // console.log(paymentSuccess,"payment success");
+      const { data } = await axios.get(
+        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
+      );
+      console.log(data);
+      if (data.status !== "VALID") {
+        return res.send({ message: "invalid payment" });
+      }
+      // update the payment status in the database
+      const updateResult = await SSLComCollection.updateOne(
+        { trxid: paymentSuccess.tran_id },
+        {
+          $set: {
+            PaymentStatus: "success",
+          },
+        }
+      );
+      res.redirect(
+        `http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`
+      );
+      console.log(updateResult, "update result");
+    });
+
+    // Payment data getting
+    app.get("/payments", async (req, res) => {
+      const users = await SSLComCollection.find().toArray();
+      res.send(users);
+    });
+
+    app.get("/payments/:trxid", async (req, res) => {
+      const trxid = req.params.trxid;
+      const payment = await SSLComCollection.findOne({ trxid: trxid });
+      res.send(payment);
     });
     app.post("/success-payment", async (req, res) => {
       // success payment data
@@ -342,29 +412,10 @@ async function run() {
       console.log(updateResult, "update result");
     });
 
-
-      
-    
-    
-    app.post('/create-sslCom', async (req, res) => {
-        const paymentData = req.body;
-        console.log(paymentData);  
-  } )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    app.post("/create-sslCom", async (req, res) => {
+      const paymentData = req.body;
+      console.log(paymentData);
+    });
 
     // Chat API Endpoints
     app.get(
@@ -858,21 +909,21 @@ async function run() {
     });
 
     // JWT Routes
-    app.post("/jwt", async (req, res) => {
-      const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
-        expiresIn: "1d",
-      });
-      res
-        .cookie("token", token, { httpOnly: true, secure: false })
-        .send({ success: true });
-    });
+    // app.post("/jwt", async (req, res) => {
+    //   const user = req.body;
+    //   const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+    //     expiresIn: "1d",
+    //   });
+    //   res
+    //     .cookie("token", token, { httpOnly: true, secure: false })
+    //     .send({ success: true });
+    // });
 
-    app.post("/logout", (req, res) => {
-      res
-        .clearCookie("token", { httpOnly: true, secure: false })
-        .send({ success: true });
-    });
+    // app.post("/logout", (req, res) => {
+    //   res
+    //     .clearCookie("token", { httpOnly: true, secure: false })
+    //     .send({ success: true });
+    // });
 
     // Seller Request APIs
     app.get("/sellerRequest/:becomeSellerStatus", async (req, res) => {
@@ -949,6 +1000,82 @@ async function run() {
     app.get("/users", async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
+    });
+
+    app.get("/bid-history/:email", async (req, res) => {
+      try {
+        const { email } = req.params;
+
+        const user = await userCollection.findOne({ email });
+
+        if (!user?.recentActivity || user.recentActivity.length === 0) {
+          return res.status(200).json([]);
+        }
+
+        const auctIDs = user.recentActivity.map(
+          (item) => new ObjectId(item.auctionId)
+        );
+        const auctions = await auctionCollection
+          .find({ _id: { $in: auctIDs } })
+          .toArray();
+
+        const now = new Date();
+
+        const bidHistory = auctions.map((auction) => {
+          const endTime = new Date(auction.endTime);
+          const bids = auction.bids || [];
+
+          // Find recent activity
+          const recentActivity = user.recentActivity.find(
+            (activity) =>
+              activity.auctionId.toString() === auction._id.toString()
+          );
+
+          const recentBidAmount = recentActivity?.amount || 0;
+          const bidTime = recentActivity?.time || "N/A";
+
+          // Calculate highest bid by user
+          const userBids = bids.filter((bid) => bid.email === email);
+          const highestUserBid =
+            Math.max(recentBidAmount, ...userBids.map((bid) => bid.amount)) ||
+            0;
+
+          // Get position based on topBidders amount
+          const sortedTopBidders = [...(auction.topBidders || [])].sort(
+            (a, b) => b.amount - a.amount
+          );
+
+          let userPosition = "N/A";
+          if (sortedTopBidders.length > 0 && highestUserBid > 0) {
+            const uniqueAmounts = [
+              ...new Set(sortedTopBidders.map((bidder) => bidder.amount)),
+            ];
+            uniqueAmounts.sort((a, b) => b - a);
+            const positionIndex = uniqueAmounts.findIndex(
+              (amount) => amount === highestUserBid
+            );
+            if (positionIndex !== -1) {
+              userPosition = positionIndex + 1;
+            }
+          }
+
+          return {
+            auctionId: auction._id,
+            auctionTitle: auction.name,
+            bidder: email,
+            bidAmount: highestUserBid,
+            time: bidTime,
+            status: now > endTime ? "End" : "Ongoing",
+            auctionImage: auction.images?.[0] || "",
+            position: userPosition,
+          };
+        });
+
+        res.status(200).json(bidHistory);
+      } catch (error) {
+        console.error("Error fetching bid history:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+      }
     });
 
     app.get("/user/:email", async (req, res) => {
@@ -1128,12 +1255,35 @@ async function run() {
       const result = await auctionCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
-
     app.delete("/auctions/:id", async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const result = await auctionCollection.deleteOne(filter);
-      res.send(result);
+      try {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const result = await auctionCollection.deleteOne(filter);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error });
+      }
+    });
+
+    //ended auctions api
+    app.get("/endedAuctions", async (req, res) => {
+      try {
+        const result = await endedAuctionCollection.find().toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error });
+      }
+    });
+
+    app.post("/endedAuctions", async (req, res) => {
+      try {
+        const auction = req.body;
+        const result = await endedAuctionCollection.insertOne(auction);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "internal server error", error });
+      }
     });
 
     //auction er top bidders update
@@ -1206,6 +1356,35 @@ async function run() {
         res.status(404).send({
           success: false,
           message: "User not found or accountBalance not changed!",
+        });
+      }
+    });
+
+    // Specific user.recentActivity  update
+    app.patch("/updateUserRecentActivity/:id", async (req, res) => {
+      const userId = req.params.id;
+      const { bidData } = req.body;
+
+      if (!bidData) {
+        return res
+          .status(400)
+          .send({ success: false, message: "valid data is required!" });
+      }
+
+      const updatedUser = await userCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $push: { recentActivity: bidData } }
+      );
+
+      if (updatedUser.modifiedCount > 0) {
+        res.status(201).send({
+          success: true,
+          message: "User data updated successfully!",
+        });
+      } else {
+        res.status(404).send({
+          success: false,
+          message: "User not found or data not changed!",
         });
       }
     });
@@ -1369,99 +1548,98 @@ async function run() {
     //   res.status(200).send({ success: true, result });
     // });
 
-      app.patch("/cover", async (req, res) => {
+    app.patch("/cover", async (req, res) => {
       const userId = req.params.id;
       const { cover } = req.body;
       const filter = { _id: new ObjectId(userId) };
-      const updateDoc = { $set: { cover:cover } };
+      const updateDoc = { $set: { cover: cover } };
       const result = await userCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
-// Update user profile
-app.patch("/user/:email", async (req, res) => {
-  const email = req.params.email;
-  const updates = req.body;
-  // List of allowed fields to update
-  const allowedFields = [
-    "name",
-    "email",
-    "photo",
-    "role",
-    "AuctionsWon",
-    "ActiveBids",
-    "TotalSpent",
-    "accountBalance",
-    "BiddingHistory",
-    "onGoingBid",
-    "Location",
-    "memberSince",
-    "recentActivity",
-    "watchingNow",
-  ];
-  
-  // Filter updates to only include allowed fields
-  const filteredUpdates = Object.keys(updates)
-    .filter((key) => allowedFields.includes(key))
-    .reduce((obj, key) => {
-      obj[key] = updates[key];
-      return obj;
-    }, {});
+    // Update user profile
+    app.patch("/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const updates = req.body;
+      // List of allowed fields to update
+      const allowedFields = [
+        "name",
+        "email",
+        "photo",
+        "role",
+        "AuctionsWon",
+        "ActiveBids",
+        "TotalSpent",
+        "accountBalance",
+        "BiddingHistory",
+        "onGoingBid",
+        "Location",
+        "memberSince",
+        "recentActivity",
+        "watchingNow",
+      ];
 
-  const filter = { email: email };
-  const updateDoc = { $set: filteredUpdates };
+      // Filter updates to only include allowed fields
+      const filteredUpdates = Object.keys(updates)
+        .filter((key) => allowedFields.includes(key))
+        .reduce((obj, key) => {
+          obj[key] = updates[key];
+          return obj;
+        }, {});
 
-  try {
-    const result = await userCollection.updateOne(filter, updateDoc);
-    if (result.matchedCount === 0) {
-      return res.status(404).send({ message: "User not found" });
-    }
-    const updatedUser = await userCollection.findOne(filter);
-    res.send(updatedUser);
-  } catch (err) {
-    res.status(500).send({ message: "Failed to update profile" });
-  }
-});
+      const filter = { email: email };
+      const updateDoc = { $set: filteredUpdates };
 
-// Update cover photo
-app.patch("/cover/:id", async (req, res) => {
-  const userId = req.params.id;
-  const { cover } = req.body;
-  const filter = { _id: new ObjectId(userId) };
-  const updateDoc = { $set: { cover: cover } };
-  try {
-    const result = await userCollection.updateOne(filter, updateDoc);
-    if (result.matchedCount === 0) {
-      return res.status(404).send({ message: "User not found" });
-    }
-    const updatedUser = await userCollection.findOne(filter);
-    res.send(updatedUser);
-  } catch (err) {
-    res.status(500).send({ message: "Failed to update cover" });
-  }
-});
-
-// Upload photo
-app.post("/upload-photo", upload.single("photo"), async (req, res) => {
-  try {
-    const photo = req.file;
-    if (!photo) {
-      return res.status(400).send({ message: "No photo uploaded" });
-    }
-    // Upload to Cloudinary
-    const uploadResult = await new Promise((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        { resource_type: "image" },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
+      try {
+        const result = await userCollection.updateOne(filter, updateDoc);
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
         }
-      ).end(photo.buffer);
+        const updatedUser = await userCollection.findOne(filter);
+        res.send(updatedUser);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update profile" });
+      }
     });
-    res.send({ url: uploadResult.secure_url });
-  } catch (err) {
-    res.status(500).send({ message: "Failed to upload photo" });
-  }
-});
+
+    // Update cover photo
+    app.patch("/cover/:id", async (req, res) => {
+      const userId = req.params.id;
+      const { cover } = req.body;
+      const filter = { _id: new ObjectId(userId) };
+      const updateDoc = { $set: { cover: cover } };
+      try {
+        const result = await userCollection.updateOne(filter, updateDoc);
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
+        }
+        const updatedUser = await userCollection.findOne(filter);
+        res.send(updatedUser);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update cover" });
+      }
+    });
+
+    // Upload photo
+    app.post("/upload-photo", upload.single("photo"), async (req, res) => {
+      try {
+        const photo = req.file;
+        if (!photo) {
+          return res.status(400).send({ message: "No photo uploaded" });
+        }
+        // Upload to Cloudinary
+        const uploadResult = await new Promise((resolve, reject) => {
+          cloudinary.uploader
+            .upload_stream({ resource_type: "image" }, (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            })
+            .end(photo.buffer);
+        });
+        res.send({ url: uploadResult.secure_url });
+      } catch (err) {
+        res.status(500).send({ message: "Failed to upload photo" });
+      }
+    });
 
     app.get("/cover", async (req, res) => {
       try {
@@ -1474,8 +1652,8 @@ app.post("/upload-photo", upload.single("photo"), async (req, res) => {
     // app.get("/cover/:userId", async (req, res) => {
     //   try {
     //     const userId = req.query.userId; // Get userId from query parameters
-    //     const query = { userId: userId }; 
-    
+    //     const query = { userId: userId };
+
     //     const result = await CoverCollection.findOne(query);
     //     if (result) {
     //       res.status(200).send(result);
