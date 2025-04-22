@@ -984,6 +984,7 @@ async function run() {
       res.send(users);
     });
 
+  
     app.get("/bid-history/:email", async (req, res) => {
       try {
         const { email } = req.params;
@@ -1003,30 +1004,40 @@ async function run() {
           const endTime = new Date(auction.endTime);
           const bids = auction.bids || [];
     
-          //  Get the user's bid from recentActivity 
-          const recentActivity = user.recentActivity.find((activity) => activity.auctionId.toString() === auction._id.toString());
-          const recentBidAmount = recentActivity ? recentActivity.amount : 0;
+          // Find recent activity
+          const recentActivity = user.recentActivity.find(
+            (activity) => activity.auctionId.toString() === auction._id.toString()
+          );
     
-          //  Find user's position in topBidders
-          const sortedTopBidders = [...auction.topBidders].sort((a, b) => b.amount - a.amount);
-          const position = sortedTopBidders.findIndex((bid) => bid.email === email) + 1 || "N/A";
+          const recentBidAmount = recentActivity?.amount || 0;
+          const bidTime = recentActivity?.time || "N/A";
     
-          //  Get bid time from the user's bid 
+          // Calculate highest bid by user
           const userBids = bids.filter((bid) => bid.email === email);
-          const bidTime = userBids.length > 0 ? userBids[0]?.time : "N/A";
+          const highestUserBid = Math.max(recentBidAmount, ...userBids.map((bid) => bid.amount)) || 0;
     
-          // Combine recentBidAmount and highestUserBid
-          const highestUserBid = Math.max(recentBidAmount, ...userBids.map(bid => bid.amount)) || 0;
+          // Get position based on topBidders amount
+          const sortedTopBidders = [...(auction.topBidders || [])].sort((a, b) => b.amount - a.amount);
+    
+          let userPosition = "N/A";
+          if (sortedTopBidders.length > 0 && highestUserBid > 0) {
+            const uniqueAmounts = [...new Set(sortedTopBidders.map((bidder) => bidder.amount))];
+            uniqueAmounts.sort((a, b) => b - a);
+            const positionIndex = uniqueAmounts.findIndex((amount) => amount === highestUserBid);
+            if (positionIndex !== -1) {
+              userPosition = positionIndex + 1;
+            }
+          }
     
           return {
             auctionId: auction._id,
-            auctionTitle: auction.name, 
+            auctionTitle: auction.name,
             bidder: email,
-            bidAmount: highestUserBid || 0, 
+            bidAmount: highestUserBid,
             time: bidTime,
             status: now > endTime ? "End" : "Ongoing",
             auctionImage: auction.images?.[0] || "",
-            position,
+            position: userPosition,
           };
         });
     
@@ -1036,7 +1047,8 @@ async function run() {
         res.status(500).json({ message: "Internal Server Error" });
       }
     });
-
+    
+    
     app.get("/user/:email", async (req, res) => {
       try {
         const email = req.params.email;
