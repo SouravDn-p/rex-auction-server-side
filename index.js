@@ -1232,12 +1232,25 @@ async function run() {
     });
     app.patch("/auctions/:id", async (req, res) => {
       const auctionId = req.params.id;
-      const { status } = req.body;
+      const { status, deliveryStatus, notes } = req.body;
+
       const filter = { _id: new ObjectId(auctionId) };
-      const updateDoc = { $set: { status } };
-      const result = await auctionCollection.updateOne(filter, updateDoc);
-      res.send(result);
+      const updateFields = {};
+
+      if (status) updateFields.status = status;
+      if (deliveryStatus) updateFields.deliveryStatus = deliveryStatus;
+      if (notes) updateFields.notes = notes;
+
+      const updateDoc = { $set: updateFields };
+
+      try {
+        const result = await auctionCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Update failed", error });
+      }
     });
+
     app.delete("/auctions/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -1261,11 +1274,24 @@ async function run() {
 
     app.post("/endedAuctions", async (req, res) => {
       try {
-        const auction = req.body;
-        const result = await endedAuctionCollection.insertOne(auction);
-        res.send(result);
+        const { auctionId } = req.body;
+        const query = { _id: new ObjectId(auctionId) };
+
+        // 1. Find the auction
+        const auction = await auctionCollection.findOne(query);
+        if (!auction) {
+          return res.status(404).send({ message: "Auction not found" });
+        }
+
+        // 2. Delete it from current auctions
+        await auctionCollection.deleteOne(query);
+
+        // 3. Insert into endedAuctionCollection
+        const insertResult = await endedAuctionCollection.insertOne(auction);
+
+        res.send({ message: "Auction ended successfully", data: insertResult });
       } catch (error) {
-        res.status(500).send({ message: "internal server error", error });
+        res.status(500).send({ message: "Internal server error", error });
       }
     });
 
