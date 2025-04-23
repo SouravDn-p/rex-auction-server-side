@@ -87,15 +87,18 @@ async function run() {
       res.send({ success: true }); // Client will handle removing from localStorage
     });
 
-    // JWT Middleware
     const verifyToken = (req, res, next) => {
-      const token =
-        req?.cookies?.token || req.headers["authorization"]?.split(" ")[1];
-      if (!token)
+      // Get token from Authorization header
+      const token = req.headers["authorization"]?.split(" ")[1];
+      
+      if (!token) {
         return res.status(401).send({ message: "Unauthorized access" });
+      }
+      
       jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
-        if (err)
+        if (err) {
           return res.status(401).send({ message: "Unauthorized access" });
+        }
         req.decodedUser = decoded;
         next();
       });
@@ -1076,7 +1079,7 @@ async function run() {
       }
     });
 
-    app.get("/user/:email", async (req, res) => {
+    app.get("/user/:email",verifyToken, async (req, res) => {
       try {
         const email = req.params.email;
         const user = await userCollection.findOne({ email });
