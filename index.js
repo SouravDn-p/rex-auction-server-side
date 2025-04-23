@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const cookieParser = require("cookie-parser");
+// const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
@@ -28,7 +28,7 @@ app.use(
   })
 );
 app.use(express.json());
-app.use(cookieParser());
+// app.use(cookieParser());
 app.use(express.urlencoded());
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -71,6 +71,21 @@ async function run() {
     // Session API to generate transaction: https://sandbox.sslcommerz.com/gwprocess/v3/api.php
     // Validation API: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?wsdl
     // Validation API (Web Service) name: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php
+
+
+    // Modify /jwt endpoint to return token in response body
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+        expiresIn: "1d",
+      });
+      res.send({ success: true, token }); // Just send token in response
+    });
+
+    // Modify /logout endpoint
+    app.post("/logout", (req, res) => {
+      res.send({ success: true }); // Client will handle removing from localStorage
+    });
 
     // JWT Middleware
     const verifyToken = (req, res, next) => {
@@ -891,22 +906,22 @@ async function run() {
       }
     });
 
-    // JWT Routes
-    app.post("/jwt", async (req, res) => {
-      const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
-        expiresIn: "1d",
-      });
-      res
-        .cookie("token", token, { httpOnly: true, secure: false })
-        .send({ success: true });
-    });
+    // // JWT Routes
+    // app.post("/jwt", async (req, res) => {
+    //   const user = req.body;
+    //   const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+    //     expiresIn: "1d",
+    //   });
+    //   res
+    //     .cookie("token", token, { httpOnly: true, secure: false })
+    //     .send({ success: true });
+    // });
 
-    app.post("/logout", (req, res) => {
-      res
-        .clearCookie("token", { httpOnly: true, secure: false })
-        .send({ success: true });
-    });
+    // app.post("/logout", (req, res) => {
+    //   res
+    //     .clearCookie("token", { httpOnly: true, secure: false })
+    //     .send({ success: true });
+    // });
 
     // Seller Request APIs
     app.get("/sellerRequest/:becomeSellerStatus", async (req, res) => {
