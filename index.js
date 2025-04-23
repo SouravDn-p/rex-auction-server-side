@@ -88,21 +88,23 @@ async function run() {
     });
 
     const verifyToken = (req, res, next) => {
-      // Get token from Authorization header
-      const token = req.headers["authorization"]?.split(" ")[1];
-      
-      if (!token) {
-        return res.status(401).send({ message: "Unauthorized access" });
+      const authHeader = req.headers.authorization;
+    
+      if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).send({ message: 'Unauthorized access' });
       }
-      
-      jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+    
+      const token = authHeader.split(' ')[1];
+    
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
-          return res.status(401).send({ message: "Unauthorized access" });
+          return res.status(403).send({ message: 'Forbidden access' });
         }
-        req.decodedUser = decoded;
+        req.decodedUser = decoded; // Make sure this line exists!
         next();
       });
     };
+    
 
     // Verify Admin Middleware
     const verifyAdmin = async (req, res, next) => {
@@ -111,6 +113,17 @@ async function run() {
       const user = await userCollection.findOne(query);
       const isAdmin = user?.role === "admin";
       if (!isAdmin)
+        return res.status(401).send({ message: "Unauthorized request" });
+      next();
+    };
+
+     // Verify Admin Middleware
+     const verifyBuyer = async (req, res, next) => {
+      const email = req.decodedUser.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isBuyer = user?.role === "buyer";
+      if (!isBuyer)
         return res.status(401).send({ message: "Unauthorized request" });
       next();
     };
@@ -279,7 +292,7 @@ async function run() {
     });
 
     // Payment APIs with SSLcom
-    app.post("/paymentsWithSSL", async (req, res) => {
+    app.post("/paymentsWithSSL",verifyToken, async (req, res) => {
       const paymentData = req.body;
       // const result = await SSLComCollection.insertOne(paymentData)
       console.log("data ", paymentData);
@@ -340,7 +353,7 @@ async function run() {
       res.send({ gatewayURL });
     });
     // Payment APIs with rex wallet
-    app.post("/rexPayment", async (req, res) => {
+    app.post("/rexPayment",verifyToken, verifyBuyer, async (req, res) => {
       const paymentData = req.body;
       try {
         const result = await SSLComCollection.insertOne(paymentData);
@@ -352,7 +365,7 @@ async function run() {
       }
     });
 
-    app.post("/success-payment", async (req, res) => {
+    app.post("/success-payment",verifyToken, async (req, res) => {
       // success payment data
       const paymentSuccess = req.body;
       // console.log(paymentSuccess,"payment success");
@@ -420,7 +433,7 @@ async function run() {
 
     // Chat API Endpoints
     app.get(
-      "/messages/email/:userEmail/:selectedUserEmail",
+      "/messages/email/:userEmail/:selectedUserEmail", verifyToken,
       async (req, res) => {
         const { userEmail, selectedUserEmail } = req.params;
         const { since } = req.query;
@@ -1003,7 +1016,7 @@ async function run() {
       res.send(users);
     });
 
-    app.get("/bid-history/:email", async (req, res) => {
+    app.get("/bid-history/:email",verifyToken, verifyBuyer,  async (req, res) => {
       try {
         const { email } = req.params;
 
@@ -1079,7 +1092,7 @@ async function run() {
       }
     });
 
-    app.get("/user/:email",verifyToken, async (req, res) => {
+    app.get("/user/:email", async (req, res) => {
       try {
         const email = req.params.email;
         const user = await userCollection.findOne({ email });
@@ -1122,7 +1135,7 @@ async function run() {
       }
     });
 
-    app.delete("/users/:id", async (req, res) => {
+    app.delete("/users/:id",verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await userCollection.deleteOne(query);
@@ -1139,20 +1152,20 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/announcement", async (req, res) => {
+    app.post("/announcement",verifyToken, verifyAdmin, async (req, res) => {
       const announcementData = req.body;
       const result = await announcementCollection.insertOne(announcementData);
       res.send({ success: true, result });
     });
 
-    app.delete("/announcement/:id", async (req, res) => {
+    app.delete("/announcement/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const result = await announcementCollection.deleteOne(filter);
       res.send(result);
     });
 
-    app.put("/announcement/:id", async (req, res) => {
+    app.put("/announcement/:id",verifyAdmin, async (req, res) => {
       const { title, content, date, image } = req.body;
       const announcementId = req.params.id;
       try {
@@ -1417,7 +1430,7 @@ async function run() {
     });
 
     // Live Bidding APIs
-    app.get("/live-bid/top", async (req, res) => {
+    app.get("/live-bid/top",verifyToken, async (req, res) => {
       const { auctionId } = req.query;
       const query = auctionId ? { auctionId } : {};
       const result = await SpecificUserLiveBiddingCollection.aggregate([
@@ -1437,7 +1450,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/live-bid/recent", async (req, res) => {
+    app.get("/live-bid/recent",verifyToken, async (req, res) => {
       const { auctionId } = req.query;
       const query = auctionId ? { auctionId } : {};
       const result = await SpecificUserLiveBiddingCollection.find(query)
@@ -1447,7 +1460,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/live-bid", async (req, res) => {
+    app.post("/live-bid",verifyToken,verifyBuyer, async (req, res) => {
       const liveBid = req.body;
       liveBid.createdAt = new Date();
       const result = await SpecificUserLiveBiddingCollection.insertOne(liveBid);
