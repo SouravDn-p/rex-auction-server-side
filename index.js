@@ -980,7 +980,7 @@ async function run() {
     });
 
     // User APIs
-    app.get("/users", verifyToken, async (req, res) => {
+    app.get("/users", async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
     });
