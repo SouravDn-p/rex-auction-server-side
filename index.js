@@ -292,7 +292,7 @@ async function run() {
     });
 
     // Payment APIs with SSLcom
-    app.post("/paymentsWithSSL",verifyToken, async (req, res) => {
+    app.post("/paymentsWithSSL", async (req, res) => {
       const paymentData = req.body;
       // const result = await SSLComCollection.insertOne(paymentData)
       console.log("data ", paymentData);
@@ -353,7 +353,7 @@ async function run() {
       res.send({ gatewayURL });
     });
     // Payment APIs with rex wallet
-    app.post("/rexPayment",verifyToken, verifyBuyer, async (req, res) => {
+    app.post("/rexPayment", async (req, res) => {
       const paymentData = req.body;
       try {
         const result = await SSLComCollection.insertOne(paymentData);
@@ -365,7 +365,7 @@ async function run() {
       }
     });
 
-    app.post("/success-payment",verifyToken, async (req, res) => {
+    app.post("/success-payment", async (req, res) => {
       // success payment data
       const paymentSuccess = req.body;
       // console.log(paymentSuccess,"payment success");
@@ -433,7 +433,7 @@ async function run() {
 
     // Chat API Endpoints
     app.get(
-      "/messages/email/:userEmail/:selectedUserEmail", verifyToken,
+      "/messages/email/:userEmail/:selectedUserEmail", 
       async (req, res) => {
         const { userEmail, selectedUserEmail } = req.params;
         const { since } = req.query;
@@ -1016,7 +1016,7 @@ async function run() {
       res.send(users);
     });
 
-    app.get("/bid-history/:email",verifyToken, verifyBuyer,  async (req, res) => {
+    app.get("/bid-history/:email",  async (req, res) => {
       try {
         const { email } = req.params;
 
@@ -1135,7 +1135,7 @@ async function run() {
       }
     });
 
-    app.delete("/users/:id",verifyAdmin, async (req, res) => {
+    app.delete("/users/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await userCollection.deleteOne(query);
@@ -1152,20 +1152,20 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/announcement",verifyToken, verifyAdmin, async (req, res) => {
+    app.post("/announcement", async (req, res) => {
       const announcementData = req.body;
       const result = await announcementCollection.insertOne(announcementData);
       res.send({ success: true, result });
     });
 
-    app.delete("/announcement/:id", verifyToken, verifyAdmin, async (req, res) => {
+    app.delete("/announcement/:id", async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const result = await announcementCollection.deleteOne(filter);
       res.send(result);
     });
 
-    app.put("/announcement/:id",verifyAdmin, async (req, res) => {
+    app.put("/announcement/:id", async (req, res) => {
       const { title, content, date, image } = req.body;
       const announcementId = req.params.id;
       try {
@@ -1430,7 +1430,7 @@ async function run() {
     });
 
     // Live Bidding APIs
-    app.get("/live-bid/top",verifyToken, async (req, res) => {
+    app.get("/live-bid/top", async (req, res) => {
       const { auctionId } = req.query;
       const query = auctionId ? { auctionId } : {};
       const result = await SpecificUserLiveBiddingCollection.aggregate([
@@ -1450,7 +1450,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/live-bid/recent",verifyToken, async (req, res) => {
+    app.get("/live-bid/recent", async (req, res) => {
       const { auctionId } = req.query;
       const query = auctionId ? { auctionId } : {};
       const result = await SpecificUserLiveBiddingCollection.find(query)
@@ -1460,7 +1460,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/live-bid",verifyToken,verifyBuyer, async (req, res) => {
+    app.post("/live-bid", async (req, res) => {
       const liveBid = req.body;
       liveBid.createdAt = new Date();
       const result = await SpecificUserLiveBiddingCollection.insertOne(liveBid);
