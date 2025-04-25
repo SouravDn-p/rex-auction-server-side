@@ -402,11 +402,7 @@ async function run() {
 
     // Chat API Endpoints
     app.get(
-<<<<<<< HEAD
-      "/messages/email/:userEmail/:selectedUserEmail", 
-=======
       "/messages/email/:userEmail/:selectedUserEmail",
->>>>>>> 725de2e0f9ca86ea915486d21d364d83b74d78f6
       async (req, res) => {
         const { userEmail, selectedUserEmail } = req.params;
         const { since } = req.query;
@@ -984,16 +980,12 @@ async function run() {
     });
 
     // User APIs
-    app.get("/users", verifyToken, async (req, res) => {
+    app.get("/users", async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
     });
 
-<<<<<<< HEAD
-    app.get("/bid-history/:email",  async (req, res) => {
-=======
     app.get("/bid-history/:email", async (req, res) => {
->>>>>>> 725de2e0f9ca86ea915486d21d364d83b74d78f6
       try {
         const { email } = req.params;
         const user = await userCollection.findOne({ email });
