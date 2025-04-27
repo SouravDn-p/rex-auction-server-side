@@ -298,9 +298,6 @@ async function run() {
         cus_fax: "01711111111",
         ship_name: "Customer Name",
         ship_add1: "Dhaka",
-        ship_add2: "Dhaka",
-        ship_city: "Dhaka",
-        ship_state: "Dhaka",
         ship_postcode: 1000,
         ship_country: "Bangladesh",
       };
