@@ -1173,6 +1173,17 @@ async function run() {
       }
     });
 
+
+    //Upcoming Auction
+    app.get("/upcoming-auctions", async (req, res) => {
+      try {
+        const result = await auctionCollection.find().toArray();
+        res.send(result)
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error });
+      }
+    });
+
     app.post("/auctions", async (req, res) => {
       const auction = req.body;
       const result = await auctionCollection.insertOne(auction);
