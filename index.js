@@ -58,6 +58,7 @@ async function run() {
     const CoverCollection = db.collection("cover");
     const SSLComCollection = db.collection("paymentsWithSSL");
     const endedAuctionCollection = db.collection("endedAuctionsList");
+    const blogCollection = db.collection("blogList");
 
     // SSLCOMMERZE ID
 
@@ -1689,6 +1690,36 @@ async function run() {
         activeConnections: connections.length,
         connections,
       });
+    });
+
+
+    app.post("/add-blogs", async (req, res) => {
+      const { title, imageUrls, fullContent } = req.body;
+
+      try {
+        const newBlog = {
+          title,
+          imageUrls,
+          fullContent,
+          createdAt: new Date(),
+        };
+
+        // Insert the new blog into the database
+        const result = await blogCollection.insertOne(newBlog);
+
+        // Send a success response
+        res.status(201).json({
+          message: "Blog added successfully",
+          blog: result.ops[0],
+        });
+      } catch (error) {
+        // Handle errors
+        console.error("Error adding blog:", error);
+        res.status(500).json({
+          message: "Error adding blog",
+          error: error.message,
+        });
+      }
     });
   } finally {
   }
