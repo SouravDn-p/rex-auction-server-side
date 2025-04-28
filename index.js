@@ -1710,6 +1710,19 @@ async function run() {
       }
     });
 
+    app.get("/blog/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const blog = await blogCollection.findOne({ _id: new ObjectId(id) });
+        if (!blog) {
+          return res.status(404).json({ message: "Blog not found" });
+        }
+        res.json(blog);
+      } catch (error) {
+        res.status(500).json({ message: "Error fetching blog" });
+      }
+    });
+
 
     app.post('/addBlogs', async (req, res) => {
       try {
@@ -1737,6 +1750,38 @@ async function run() {
         res.status(500).json({ message: 'Internal Server Error' });
       }
     });
+
+    // Ensure that the route matches the one you're calling in the frontend
+
+
+    app.patch('/updateBlog/:id', async (req, res) => {
+      const { id } = req.params;
+      const { title, fullContent, imageUrls } = req.body;
+
+      try {
+        const result = await blogCollection.updateOne(
+          { _id: new ObjectId(id) }, // match document by id
+          {
+            $set: {
+              title,
+              fullContent,
+              imageUrls: imageUrls || [],
+            },
+          }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ success: false, message: 'Blog not found' });
+        }
+
+        res.json({ success: true, message: 'Blog updated successfully' });
+      } catch (error) {
+        console.error('Error updating blog:', error);
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+      }
+    });
+
+
 
     app.delete('/delete/:id', async (req, res) => {
       const { id } = req.params; // Extract the blog post ID from the URL parameter
