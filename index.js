@@ -1694,33 +1694,57 @@ async function run() {
 
 
     app.post("/add-blogs", async (req, res) => {
-      const { title, imageUrls, fullContent } = req.body;
-
       try {
+        // 1. Validate incoming data
+        const { title, imageUrls, fullContent } = req.body;
+        
+        if (!title || !fullContent || !imageUrls || !Array.isArray(imageUrls)) {
+          return res.status(400).json({
+            success: false,
+            message: "Title, content, and at least one image URL are required"
+          });
+        }
+    
+        // 2. Create blog object
         const newBlog = {
           title,
           imageUrls,
           fullContent,
-          createdAt: new Date(),
+          createdAt: new Date()
         };
-
-        // Insert the new blog into the database
+    
+        // 3. Insert into database
         const result = await blogCollection.insertOne(newBlog);
-
-        // Send a success response
+    
+        // 4. Check if insertion was successful
+        if (!result.acknowledged) {
+          throw new Error("Failed to insert blog into database");
+        }
+    
+        // 5. Send proper success response
         res.status(201).json({
-          message: "Blog added successfully",
-          blog: result.ops[0],
+          success: true,
+          message: "Blog created successfully",
+          data: {
+            insertedId: result.insertedId,
+            blog: newBlog
+          }
         });
+    
       } catch (error) {
-        // Handle errors
-        console.error("Error adding blog:", error);
+        console.error("Error creating blog:", error);
+        
+        // 6. Send proper error response
         res.status(500).json({
-          message: "Error adding blog",
-          error: error.message,
+          success: false,
+          message: "Internal server error",
+          error: error.message
         });
       }
     });
+
+
+
   } finally {
   }
 }
