@@ -1692,23 +1692,23 @@ async function run() {
       });
     });
 
-    app.get('/blogs', async (req, res) => {
+    // app.get('/allBlogs', async (req, res) => {
       
 
-      try {
+    //   try {
         
-        const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
+    //     const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
 
-        if (!blogs || blogs.length === 0) {
-          return res.status(404).json({ message: 'No blogs found for this email.' });
-        }
+    //     if (!blogs || blogs.length === 0) {
+    //       return res.status(404).json({ message: 'No blogs found for this email.' });
+    //     }
 
-        res.status(200).json(blogs);  // Respond with the blogs
-      } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error, please try again later.' });
-      }
-    });
+    //     res.status(200).json(blogs);  // Respond with the blogs
+    //   } catch (error) {
+    //     console.error(error);
+    //     res.status(500).json({ message: 'Server error, please try again later.' });
+    //   }
+    // });
 
     app.get('/blogs/:email', async (req, res) => {
       const email = req.params.email;  // Extract email parameter from URL
