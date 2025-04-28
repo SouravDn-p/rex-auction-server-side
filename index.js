@@ -298,6 +298,8 @@ async function run() {
         cus_fax: "01711111111",
         ship_name: "Customer Name",
         ship_add1: "Dhaka",
+         ship_add2: "Dhaka",
+        ship_city: "Dhaka",
         ship_postcode: 1000,
         ship_country: "Bangladesh",
       };
@@ -368,30 +370,6 @@ async function run() {
       const payment = await SSLComCollection.findOne({ trxid: trxid });
       res.send(payment);
     });
-    app.post("/success-payment", async (req, res) => {
-      // success payment data
-      const paymentSuccess = req.body;
-      // console.log(paymentSuccess,"payment success");
-      const { data } = await axios.get(
-        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
-      );
-      console.log(data);
-      if (data.status !== "VALID") {
-        return res.send({ message: "invalid payment" });
-      }
-      // update the payment status in the database
-      const updateResult = await SSLComCollection.updateOne(
-        { trxid: paymentSuccess.tran_id },
-        {
-          $set: {
-            status: "success",
-          },
-        }
-      );
-      res.redirect("http://localhost:5173/dashboard/payment");
-      console.log(updateResult, "update result");
-    });
-
     app.post("/create-sslCom", async (req, res) => {
       const paymentData = req.body;
       console.log(paymentData);
@@ -1173,12 +1151,11 @@ async function run() {
       }
     });
 
-
     //Upcoming Auction
     app.get("/upcoming-auctions", async (req, res) => {
       try {
         const result = await auctionCollection.find().toArray();
-        res.send(result)
+        res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error", error });
       }
