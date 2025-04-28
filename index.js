@@ -1692,54 +1692,49 @@ async function run() {
       });
     });
 
-
-    app.post("/add-blogs", async (req, res) => {
+    app.get('/blogs/:email', async (req, res) => {
+      const email = req.params.email;  // Extract email parameter from URL
+    
       try {
-        // 1. Validate incoming data
-        const { title, imageUrls, fullContent } = req.body;
+        const query ={authorEmail : email}
+        const blogs = await blogCollection.find(query).toArray(); // Adjust to your actual schema or data retrieval method
         
-        if (!title || !fullContent || !imageUrls || !Array.isArray(imageUrls)) {
-          return res.status(400).json({
-            success: false,
-            message: "Title, content, and at least one image URL are required"
-          });
+        if (!blogs || blogs.length === 0) {
+          return res.status(404).json({ message: 'No blogs found for this email.' });
         }
     
-        // 2. Create blog object
-        const newBlog = {
-          title,
-          imageUrls,
-          fullContent,
-          createdAt: new Date()
-        };
-    
-        // 3. Insert into database
-        const result = await blogCollection.insertOne(newBlog);
-    
-        // 4. Check if insertion was successful
-        if (!result.acknowledged) {
-          throw new Error("Failed to insert blog into database");
-        }
-    
-        // 5. Send proper success response
-        res.status(201).json({
-          success: true,
-          message: "Blog created successfully",
-          data: {
-            insertedId: result.insertedId,
-            blog: newBlog
-          }
-        });
-    
+        res.status(200).json(blogs);  // Respond with the blogs
       } catch (error) {
-        console.error("Error creating blog:", error);
-        
-        // 6. Send proper error response
-        res.status(500).json({
-          success: false,
-          message: "Internal server error",
-          error: error.message
-        });
+        console.error(error);
+        res.status(500).json({ message: 'Server error, please try again later.' });
+      }
+    });
+
+
+    app.post('/addBlogs', async (req, res) => {
+      try {
+        const { title, imageUrls, fullContent } = req.body;
+
+        if (!title || !imageUrls.length || !fullContent) {
+          return res.status(400).json({ message: 'All fields are required.' });
+        }
+        const blog = req.body;
+
+        const newBlog = {
+          ...blog,
+          createdAt: new Date(), 
+        };
+
+        const result = await blogCollection.insertOne(newBlog);
+
+        if (result.insertedId) {
+          res.status(201).json({ message: 'Blog created successfully', blogId: result.insertedId });
+        } else {
+          res.status(500).json({ message: 'Failed to create blog.' });
+        }
+      } catch (error) {
+        console.error('Error in /add-blogs:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
       }
     });
 
