@@ -58,6 +58,7 @@ async function run() {
     const CoverCollection = db.collection("cover");
     const SSLComCollection = db.collection("paymentsWithSSL");
     const endedAuctionCollection = db.collection("endedAuctionsList");
+    const blogCollection = db.collection("blogList");
 
     // SSLCOMMERZE ID
 
@@ -1690,6 +1691,139 @@ async function run() {
         connections,
       });
     });
+
+    // app.get('/allBlogs', async (req, res) => {
+      
+
+    //   try {
+        
+    //     const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
+
+    //     if (!blogs || blogs.length === 0) {
+    //       return res.status(404).json({ message: 'No blogs found for this email.' });
+    //     }
+
+    //     res.status(200).json(blogs);  // Respond with the blogs
+    //   } catch (error) {
+    //     console.error(error);
+    //     res.status(500).json({ message: 'Server error, please try again later.' });
+    //   }
+    // });
+
+    app.get('/blogs/:email', async (req, res) => {
+      const email = req.params.email;  // Extract email parameter from URL
+
+      try {
+        const query = { authorEmail: email }
+        const blogs = await blogCollection.find(query).toArray(); // Adjust to your actual schema or data retrieval method
+
+        if (!blogs || blogs.length === 0) {
+          return res.status(404).json({ message: 'No blogs found for this email.' });
+        }
+
+        res.status(200).json(blogs);  // Respond with the blogs
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error, please try again later.' });
+      }
+    });
+
+    app.get("/blog/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const blog = await blogCollection.findOne({ _id: new ObjectId(id) });
+        if (!blog) {
+          return res.status(404).json({ message: "Blog not found" });
+        }
+        res.json(blog);
+      } catch (error) {
+        res.status(500).json({ message: "Error fetching blog" });
+      }
+    });
+
+
+    app.post('/addBlogs', async (req, res) => {
+      try {
+        const { title, imageUrls, fullContent } = req.body;
+
+        if (!title || !imageUrls.length || !fullContent) {
+          return res.status(400).json({ message: 'All fields are required.' });
+        }
+        const blog = req.body;
+
+        const newBlog = {
+          ...blog,
+          createdAt: new Date(),
+        };
+
+        const result = await blogCollection.insertOne(newBlog);
+
+        if (result.insertedId) {
+          res.status(201).json({ message: 'Blog created successfully', blogId: result.insertedId });
+        } else {
+          res.status(500).json({ message: 'Failed to create blog.' });
+        }
+      } catch (error) {
+        console.error('Error in /add-blogs:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+      }
+    });
+
+    // Ensure that the route matches the one you're calling in the frontend
+
+
+    app.patch('/updateBlog/:id', async (req, res) => {
+      const { id } = req.params;
+      const { title, fullContent, imageUrls } = req.body;
+
+      try {
+        const result = await blogCollection.updateOne(
+          { _id: new ObjectId(id) }, // match document by id
+          {
+            $set: {
+              title,
+              fullContent,
+              imageUrls: imageUrls || [],
+            },
+          }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ success: false, message: 'Blog not found' });
+        }
+
+        res.json({ success: true, message: 'Blog updated successfully' });
+      } catch (error) {
+        console.error('Error updating blog:', error);
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+      }
+    });
+
+
+
+    app.delete('/delete/:id', async (req, res) => {
+      const { id } = req.params; // Extract the blog post ID from the URL parameter
+
+      try {
+        // Attempt to delete the blog post by its ID from the database
+        const result = await blogCollection.deleteOne({ _id: new ObjectId(id) });
+
+        // Check if the blog post was found and deleted
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: 'Blog post not found.' });
+        }
+
+        // Respond with a success message if the deletion is successful
+        res.status(200).json({ message: 'Blog post deleted successfully.' });
+      } catch (error) {
+        console.error('Error deleting blog post:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+      }
+    });
+
+
+
+
   } finally {
   }
 }
