@@ -1694,15 +1694,15 @@ async function run() {
 
     app.get('/blogs/:email', async (req, res) => {
       const email = req.params.email;  // Extract email parameter from URL
-    
+
       try {
-        const query ={authorEmail : email}
+        const query = { authorEmail: email }
         const blogs = await blogCollection.find(query).toArray(); // Adjust to your actual schema or data retrieval method
-        
+
         if (!blogs || blogs.length === 0) {
           return res.status(404).json({ message: 'No blogs found for this email.' });
         }
-    
+
         res.status(200).json(blogs);  // Respond with the blogs
       } catch (error) {
         console.error(error);
@@ -1722,7 +1722,7 @@ async function run() {
 
         const newBlog = {
           ...blog,
-          createdAt: new Date(), 
+          createdAt: new Date(),
         };
 
         const result = await blogCollection.insertOne(newBlog);
@@ -1737,6 +1737,27 @@ async function run() {
         res.status(500).json({ message: 'Internal Server Error' });
       }
     });
+
+    app.delete('/delete/:id', async (req, res) => {
+      const { id } = req.params; // Extract the blog post ID from the URL parameter
+
+      try {
+        // Attempt to delete the blog post by its ID from the database
+        const result = await blogCollection.deleteOne({ _id: new ObjectId(id) });
+
+        // Check if the blog post was found and deleted
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: 'Blog post not found.' });
+        }
+
+        // Respond with a success message if the deletion is successful
+        res.status(200).json({ message: 'Blog post deleted successfully.' });
+      } catch (error) {
+        console.error('Error deleting blog post:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+      }
+    });
+
 
 
 
