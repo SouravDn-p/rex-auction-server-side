@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const bodyParser = require('body-parser');
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -30,6 +31,8 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded());
+app.use(bodyParser.urlencoded({ extended: true }));
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: {
@@ -1692,23 +1695,23 @@ async function run() {
       });
     });
 
-    // app.get('/allBlogs', async (req, res) => {
+    app.get('/allBlogs', async (req, res) => {
       
 
-    //   try {
+      try {
         
-    //     const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
+        const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
 
-    //     if (!blogs || blogs.length === 0) {
-    //       return res.status(404).json({ message: 'No blogs found for this email.' });
-    //     }
+        if (!blogs || blogs.length === 0) {
+          return res.status(404).json({ message: 'No blogs found for this email.' });
+        }
 
-    //     res.status(200).json(blogs);  // Respond with the blogs
-    //   } catch (error) {
-    //     console.error(error);
-    //     res.status(500).json({ message: 'Server error, please try again later.' });
-    //   }
-    // });
+        res.status(200).json(blogs);  // Respond with the blogs
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error, please try again later.' });
+      }
+    });
 
     app.get('/blogs/:email', async (req, res) => {
       const email = req.params.email;  // Extract email parameter from URL
@@ -1799,8 +1802,6 @@ async function run() {
       }
     });
 
-
-
     app.delete('/delete/:id', async (req, res) => {
       const { id } = req.params; // Extract the blog post ID from the URL parameter
 
@@ -1820,9 +1821,6 @@ async function run() {
         res.status(500).json({ message: 'Internal Server Error' });
       }
     });
-
-
-
 
   } finally {
   }
