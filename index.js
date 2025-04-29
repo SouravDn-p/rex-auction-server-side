@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const bodyParser = require('body-parser');
+const bodyParser = require("body-parser");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -1177,12 +1177,11 @@ async function run() {
       }
     });
 
-
     //Upcoming Auction
     app.get("/upcoming-auctions", async (req, res) => {
       try {
         const result = await auctionCollection.find().toArray();
-        res.send(result)
+        res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error", error });
       }
@@ -1592,6 +1591,11 @@ async function run() {
         "memberSince",
         "recentActivity",
         "watchingNow",
+        "phone",
+        "country",
+        "city",
+        "postalCode",
+        "taxId",
       ];
 
       // Filter updates to only include allowed fields
@@ -1616,7 +1620,24 @@ async function run() {
         res.status(500).send({ message: "Failed to update profile" });
       }
     });
+    // settings patch
+    app.patch("/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const updates = req.body;
+      const filter = { email: email };
+      const updateDoc = { $set: updates };
 
+      try {
+        const result = await userCollection.updateOne(filter, updateDoc);
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
+        }
+        const updatedUser = await userCollection.findOne(filter);
+        res.send(updatedUser);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update profile" });
+      }
+    });
     // Update cover photo
     app.patch("/cover/:id", async (req, res) => {
       const userId = req.params.id;
@@ -1695,39 +1716,44 @@ async function run() {
       });
     });
 
-    app.get('/allBlogs', async (req, res) => {
-      
-
+    app.get("/allBlogs", async (req, res) => {
       try {
-        
         const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
 
         if (!blogs || blogs.length === 0) {
-          return res.status(404).json({ message: 'No blogs found for this email.' });
+          return res
+            .status(404)
+            .json({ message: "No blogs found for this email." });
         }
 
-        res.status(200).json(blogs);  // Respond with the blogs
+        res.status(200).json(blogs); // Respond with the blogs
       } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error, please try again later.' });
+        res
+          .status(500)
+          .json({ message: "Server error, please try again later." });
       }
     });
 
-    app.get('/blogs/:email', async (req, res) => {
-      const email = req.params.email;  // Extract email parameter from URL
+    app.get("/blogs/:email", async (req, res) => {
+      const email = req.params.email; // Extract email parameter from URL
 
       try {
-        const query = { authorEmail: email }
+        const query = { authorEmail: email };
         const blogs = await blogCollection.find(query).toArray(); // Adjust to your actual schema or data retrieval method
 
         if (!blogs || blogs.length === 0) {
-          return res.status(404).json({ message: 'No blogs found for this email.' });
+          return res
+            .status(404)
+            .json({ message: "No blogs found for this email." });
         }
 
-        res.status(200).json(blogs);  // Respond with the blogs
+        res.status(200).json(blogs); // Respond with the blogs
       } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error, please try again later.' });
+        res
+          .status(500)
+          .json({ message: "Server error, please try again later." });
       }
     });
 
@@ -1744,13 +1770,12 @@ async function run() {
       }
     });
 
-
-    app.post('/addBlogs', async (req, res) => {
+    app.post("/addBlogs", async (req, res) => {
       try {
         const { title, imageUrls, fullContent } = req.body;
 
         if (!title || !imageUrls.length || !fullContent) {
-          return res.status(400).json({ message: 'All fields are required.' });
+          return res.status(400).json({ message: "All fields are required." });
         }
         const blog = req.body;
 
@@ -1762,20 +1787,22 @@ async function run() {
         const result = await blogCollection.insertOne(newBlog);
 
         if (result.insertedId) {
-          res.status(201).json({ message: 'Blog created successfully', blogId: result.insertedId });
+          res.status(201).json({
+            message: "Blog created successfully",
+            blogId: result.insertedId,
+          });
         } else {
-          res.status(500).json({ message: 'Failed to create blog.' });
+          res.status(500).json({ message: "Failed to create blog." });
         }
       } catch (error) {
-        console.error('Error in /add-blogs:', error);
-        res.status(500).json({ message: 'Internal Server Error' });
+        console.error("Error in /add-blogs:", error);
+        res.status(500).json({ message: "Internal Server Error" });
       }
     });
 
     // Ensure that the route matches the one you're calling in the frontend
 
-
-    app.patch('/updateBlog/:id', async (req, res) => {
+    app.patch("/updateBlog/:id", async (req, res) => {
       const { id } = req.params;
       const { title, fullContent, imageUrls } = req.body;
 
@@ -1792,36 +1819,43 @@ async function run() {
         );
 
         if (result.matchedCount === 0) {
-          return res.status(404).json({ success: false, message: 'Blog not found' });
+          return res
+            .status(404)
+            .json({ success: false, message: "Blog not found" });
         }
 
-        res.json({ success: true, message: 'Blog updated successfully' });
+        res.json({ success: true, message: "Blog updated successfully" });
       } catch (error) {
-        console.error('Error updating blog:', error);
-        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+        console.error("Error updating blog:", error);
+        res.status(500).json({
+          success: false,
+          message: "Server Error",
+          error: error.message,
+        });
       }
     });
 
-    app.delete('/delete/:id', async (req, res) => {
+    app.delete("/delete/:id", async (req, res) => {
       const { id } = req.params; // Extract the blog post ID from the URL parameter
 
       try {
         // Attempt to delete the blog post by its ID from the database
-        const result = await blogCollection.deleteOne({ _id: new ObjectId(id) });
+        const result = await blogCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
 
         // Check if the blog post was found and deleted
         if (result.deletedCount === 0) {
-          return res.status(404).json({ message: 'Blog post not found.' });
+          return res.status(404).json({ message: "Blog post not found." });
         }
 
         // Respond with a success message if the deletion is successful
-        res.status(200).json({ message: 'Blog post deleted successfully.' });
+        res.status(200).json({ message: "Blog post deleted successfully." });
       } catch (error) {
-        console.error('Error deleting blog post:', error);
-        res.status(500).json({ message: 'Internal Server Error' });
+        console.error("Error deleting blog post:", error);
+        res.status(500).json({ message: "Internal Server Error" });
       }
     });
-
   } finally {
   }
 }
