@@ -345,6 +345,10 @@ async function run() {
             message: "Auction not found",
           });
         }
+        res.status(201).send({
+          success: true,
+          message: "successfully updated",
+        });
       } catch (error) {
         console.error("Payment confirmation error:", error);
         res.status(500).json({
