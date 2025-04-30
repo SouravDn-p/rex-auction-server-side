@@ -316,7 +316,7 @@ async function run() {
       });
 
       await SSLComCollection.insertOne(paymentData);
-       
+
       const gatewayURL = iniResponse?.data?.GatewayPageURL;
       // console.log(gatewayURL);
       res.send({ gatewayURL });
@@ -326,10 +326,9 @@ async function run() {
       const paymentData = req.body;
       try {
         const result = await SSLComCollection.insertOne(paymentData);
-       
+
         res.status(201).send({ success: true, insertedId: result.insertedId });
       } catch (error) {
-      
         res.status(500).send({ message: "Failed to process payment" });
       }
     });
@@ -340,8 +339,6 @@ async function run() {
       const { data } = await axios.get(
         `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
       );
-
-  
 
       if (data.status !== "VALID") {
         return res.send({ message: "invalid payment" });
@@ -355,14 +352,12 @@ async function run() {
             PaymentStatus: "success",
           },
         }
-        
       );
       res.redirect(
         `http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`
       );
-
     });
-    
+
     // Payment data getting
 
     app.get("/payments", async (req, res) => {
@@ -1090,6 +1085,25 @@ async function run() {
       }
     });
 
+    // settings Patch
+    app.patch("/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const updates = req.body;
+      const filter = { email: email };
+      const updateDoc = { $set: updates };
+
+      try {
+        const result = await userCollection.updateOne(filter, updateDoc);
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
+        }
+        const updatedUser = await userCollection.findOne(filter);
+        res.send(updatedUser);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update profile" });
+      }
+    });
+
     // Announcement APIs
     app.get("/announcement", async (req, res) => {
       const result = await announcementCollection.find().toArray();
@@ -1744,12 +1758,10 @@ async function run() {
         const result = await blogCollection.insertOne(newBlog);
 
         if (result.insertedId) {
-          res
-            .status(201)
-            .json({
-              message: "Blog created successfully",
-              blogId: result.insertedId,
-            });
+          res.status(201).json({
+            message: "Blog created successfully",
+            blogId: result.insertedId,
+          });
         } else {
           res.status(500).json({ message: "Failed to create blog." });
         }
@@ -1786,13 +1798,11 @@ async function run() {
         res.json({ success: true, message: "Blog updated successfully" });
       } catch (error) {
         console.error("Error updating blog:", error);
-        res
-          .status(500)
-          .json({
-            success: false,
-            message: "Server Error",
-            error: error.message,
-          });
+        res.status(500).json({
+          success: false,
+          message: "Server Error",
+          error: error.message,
+        });
       }
     });
 
