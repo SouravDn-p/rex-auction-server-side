@@ -326,7 +326,6 @@ async function run() {
         const { auctionId } = req.body;
 
         if (!auctionId) {
-          console.log("Auction ID is required");
           return res
             .status(400)
             .json({ success: false, message: "Auction ID is required" });
