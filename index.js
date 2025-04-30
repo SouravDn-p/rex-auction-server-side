@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const bodyParser = require('body-parser');
+const bodyParser = require("body-parser");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -268,8 +268,6 @@ async function run() {
     app.post("/paymentsWithSSL", async (req, res) => {
       const paymentData = req.body;
       // const result = await SSLComCollection.insertOne(paymentData)
-      console.log("data ", paymentData);
-
       const trxid = new ObjectId().toString();
       paymentData.trxid = trxid;
       const initiate = {
@@ -302,6 +300,8 @@ async function run() {
         cus_fax: "01711111111",
         ship_name: "Customer Name",
         ship_add1: "Dhaka",
+        ship_add2: "Dhaka",
+        ship_city: "Dhaka",
         ship_postcode: 1000,
         ship_country: "Bangladesh",
       };
@@ -314,10 +314,9 @@ async function run() {
           "Content-Type": "application/x-www-form-urlencoded",
         },
       });
-      console.log(iniResponse, "response");
 
       await SSLComCollection.insertOne(paymentData);
-
+       
       const gatewayURL = iniResponse?.data?.GatewayPageURL;
       // console.log(gatewayURL);
       res.send({ gatewayURL });
@@ -327,26 +326,28 @@ async function run() {
       const paymentData = req.body;
       try {
         const result = await SSLComCollection.insertOne(paymentData);
-        console.log("data ", paymentData);
+       
         res.status(201).send({ success: true, insertedId: result.insertedId });
       } catch (error) {
-        console.error("Payment Error:", error);
+      
         res.status(500).send({ message: "Failed to process payment" });
       }
     });
 
     app.post("/success-payment", async (req, res) => {
-      // success payment data
       const paymentSuccess = req.body;
-      // console.log(paymentSuccess,"payment success");
+      console.log(paymentSuccess, "payment success");
       const { data } = await axios.get(
         `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
       );
-      console.log(data);
+
+  
+
       if (data.status !== "VALID") {
         return res.send({ message: "invalid payment" });
       }
-      // update the payment status in the database
+
+      // Update SSLComCollection
       const updateResult = await SSLComCollection.updateOne(
         { trxid: paymentSuccess.tran_id },
         {
@@ -354,14 +355,16 @@ async function run() {
             PaymentStatus: "success",
           },
         }
+        
       );
       res.redirect(
         `http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`
       );
-      console.log(updateResult, "update result");
-    });
 
+    });
+    
     // Payment data getting
+
     app.get("/payments", async (req, res) => {
       const users = await SSLComCollection.find().toArray();
       res.send(users);
@@ -372,30 +375,6 @@ async function run() {
       const payment = await SSLComCollection.findOne({ trxid: trxid });
       res.send(payment);
     });
-    app.post("/success-payment", async (req, res) => {
-      // success payment data
-      const paymentSuccess = req.body;
-      // console.log(paymentSuccess,"payment success");
-      const { data } = await axios.get(
-        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
-      );
-      console.log(data);
-      if (data.status !== "VALID") {
-        return res.send({ message: "invalid payment" });
-      }
-      // update the payment status in the database
-      const updateResult = await SSLComCollection.updateOne(
-        { trxid: paymentSuccess.tran_id },
-        {
-          $set: {
-            status: "success",
-          },
-        }
-      );
-      res.redirect("http://localhost:5173/dashboard/payment");
-      console.log(updateResult, "update result");
-    });
-
     app.post("/create-sslCom", async (req, res) => {
       const paymentData = req.body;
       console.log(paymentData);
@@ -1177,12 +1156,11 @@ async function run() {
       }
     });
 
-
     //Upcoming Auction
     app.get("/upcoming-auctions", async (req, res) => {
       try {
         const result = await auctionCollection.find().toArray();
-        res.send(result)
+        res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error", error });
       }
@@ -1695,39 +1673,44 @@ async function run() {
       });
     });
 
-    app.get('/allBlogs', async (req, res) => {
-      
-
+    app.get("/allBlogs", async (req, res) => {
       try {
-        
         const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
 
         if (!blogs || blogs.length === 0) {
-          return res.status(404).json({ message: 'No blogs found for this email.' });
+          return res
+            .status(404)
+            .json({ message: "No blogs found for this email." });
         }
 
-        res.status(200).json(blogs);  // Respond with the blogs
+        res.status(200).json(blogs); // Respond with the blogs
       } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error, please try again later.' });
+        res
+          .status(500)
+          .json({ message: "Server error, please try again later." });
       }
     });
 
-    app.get('/blogs/:email', async (req, res) => {
-      const email = req.params.email;  // Extract email parameter from URL
+    app.get("/blogs/:email", async (req, res) => {
+      const email = req.params.email; // Extract email parameter from URL
 
       try {
-        const query = { authorEmail: email }
+        const query = { authorEmail: email };
         const blogs = await blogCollection.find(query).toArray(); // Adjust to your actual schema or data retrieval method
 
         if (!blogs || blogs.length === 0) {
-          return res.status(404).json({ message: 'No blogs found for this email.' });
+          return res
+            .status(404)
+            .json({ message: "No blogs found for this email." });
         }
 
-        res.status(200).json(blogs);  // Respond with the blogs
+        res.status(200).json(blogs); // Respond with the blogs
       } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error, please try again later.' });
+        res
+          .status(500)
+          .json({ message: "Server error, please try again later." });
       }
     });
 
@@ -1744,13 +1727,12 @@ async function run() {
       }
     });
 
-
-    app.post('/addBlogs', async (req, res) => {
+    app.post("/addBlogs", async (req, res) => {
       try {
         const { title, imageUrls, fullContent } = req.body;
 
         if (!title || !imageUrls.length || !fullContent) {
-          return res.status(400).json({ message: 'All fields are required.' });
+          return res.status(400).json({ message: "All fields are required." });
         }
         const blog = req.body;
 
@@ -1762,20 +1744,24 @@ async function run() {
         const result = await blogCollection.insertOne(newBlog);
 
         if (result.insertedId) {
-          res.status(201).json({ message: 'Blog created successfully', blogId: result.insertedId });
+          res
+            .status(201)
+            .json({
+              message: "Blog created successfully",
+              blogId: result.insertedId,
+            });
         } else {
-          res.status(500).json({ message: 'Failed to create blog.' });
+          res.status(500).json({ message: "Failed to create blog." });
         }
       } catch (error) {
-        console.error('Error in /add-blogs:', error);
-        res.status(500).json({ message: 'Internal Server Error' });
+        console.error("Error in /add-blogs:", error);
+        res.status(500).json({ message: "Internal Server Error" });
       }
     });
 
     // Ensure that the route matches the one you're calling in the frontend
 
-
-    app.patch('/updateBlog/:id', async (req, res) => {
+    app.patch("/updateBlog/:id", async (req, res) => {
       const { id } = req.params;
       const { title, fullContent, imageUrls } = req.body;
 
@@ -1792,36 +1778,45 @@ async function run() {
         );
 
         if (result.matchedCount === 0) {
-          return res.status(404).json({ success: false, message: 'Blog not found' });
+          return res
+            .status(404)
+            .json({ success: false, message: "Blog not found" });
         }
 
-        res.json({ success: true, message: 'Blog updated successfully' });
+        res.json({ success: true, message: "Blog updated successfully" });
       } catch (error) {
-        console.error('Error updating blog:', error);
-        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+        console.error("Error updating blog:", error);
+        res
+          .status(500)
+          .json({
+            success: false,
+            message: "Server Error",
+            error: error.message,
+          });
       }
     });
 
-    app.delete('/delete/:id', async (req, res) => {
+    app.delete("/delete/:id", async (req, res) => {
       const { id } = req.params; // Extract the blog post ID from the URL parameter
 
       try {
         // Attempt to delete the blog post by its ID from the database
-        const result = await blogCollection.deleteOne({ _id: new ObjectId(id) });
+        const result = await blogCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
 
         // Check if the blog post was found and deleted
         if (result.deletedCount === 0) {
-          return res.status(404).json({ message: 'Blog post not found.' });
+          return res.status(404).json({ message: "Blog post not found." });
         }
 
         // Respond with a success message if the deletion is successful
-        res.status(200).json({ message: 'Blog post deleted successfully.' });
+        res.status(200).json({ message: "Blog post deleted successfully." });
       } catch (error) {
-        console.error('Error deleting blog post:', error);
-        res.status(500).json({ message: 'Internal Server Error' });
+        console.error("Error deleting blog post:", error);
+        res.status(500).json({ message: "Internal Server Error" });
       }
     });
-
   } finally {
   }
 }
