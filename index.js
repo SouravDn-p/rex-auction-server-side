@@ -321,7 +321,7 @@ async function run() {
       // console.log(gatewayURL);
       res.send({ gatewayURL });
     });
-    app.patch("/paymentConfirmation", async (req, res) => {
+    app.patch("/confirmation", async (req, res) => {
       try {
         const { auctionId } = req.body;
 
