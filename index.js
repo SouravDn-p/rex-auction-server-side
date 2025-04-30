@@ -321,6 +321,39 @@ async function run() {
       // console.log(gatewayURL);
       res.send({ gatewayURL });
     });
+    app.patch("/paymentConfirmation", async (req, res) => {
+      try {
+        const { auctionId } = req.body;
+
+        if (!auctionId) {
+          console.log("Auction ID is required");
+          return res
+            .status(400)
+            .json({ success: false, message: "Auction ID is required" });
+        }
+        const filter = { _id: new ObjectId(auctionId) };
+        const updateDoc = {
+          $set: {
+            payment: "success",
+          },
+        };
+
+        const result = await auctionCollection.updateOne(filter, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({
+            success: false,
+            message: "Auction not found",
+          });
+        }
+      } catch (error) {
+        console.error("Payment confirmation error:", error);
+        res.status(500).json({
+          success: false,
+          message: "Server error during payment confirmation",
+        });
+      }
+    });
     // Payment APIs with rex wallet
     app.post("/rexPayment", async (req, res) => {
       const paymentData = req.body;

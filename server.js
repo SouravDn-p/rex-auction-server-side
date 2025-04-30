@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const bodyParser = require("body-parser");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -30,6 +31,8 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded());
+app.use(bodyParser.urlencoded({ extended: true }));
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_KEY}@cluster0.npxrq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: {
@@ -58,6 +61,7 @@ async function run() {
     const CoverCollection = db.collection("cover");
     const SSLComCollection = db.collection("paymentsWithSSL");
     const endedAuctionCollection = db.collection("endedAuctionsList");
+    const blogCollection = db.collection("blogList");
 
     // SSLCOMMERZE ID
 
@@ -298,9 +302,6 @@ async function run() {
         cus_fax: "01711111111",
         ship_name: "Customer Name",
         ship_add1: "Dhaka",
-        ship_add2: "Dhaka",
-        ship_city: "Dhaka",
-        ship_state: "Dhaka",
         ship_postcode: 1000,
         ship_country: "Bangladesh",
       };
@@ -360,6 +361,40 @@ async function run() {
       console.log(updateResult, "update result");
     });
 
+    app.patch("/paymentConfirmation", async (req, res) => {
+      try {
+        const { auctionId } = req.body;
+
+        if (!auctionId) {
+          console.log("Auction ID is required");
+          return res
+            .status(400)
+            .json({ success: false, message: "Auction ID is required" });
+        }
+        const filter = { _id: new ObjectId(auctionId) };
+        const updateDoc = {
+          $set: {
+            payment: "success",
+          },
+        };
+
+        const result = await auctionCollection.updateOne(filter, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({
+            success: false,
+            message: "Auction not found",
+          });
+        }
+      } catch (error) {
+        console.error("Payment confirmation error:", error);
+        res.status(500).json({
+          success: false,
+          message: "Server error during payment confirmation",
+        });
+      }
+    });
+
     // Payment data getting
     app.get("/payments", async (req, res) => {
       const users = await SSLComCollection.find().toArray();
@@ -374,11 +409,9 @@ async function run() {
     app.post("/success-payment", async (req, res) => {
       // success payment data
       const paymentSuccess = req.body;
-      // console.log(paymentSuccess,"payment success");
       const { data } = await axios.get(
         `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
       );
-      console.log(data);
       if (data.status !== "VALID") {
         return res.send({ message: "invalid payment" });
       }
@@ -980,7 +1013,7 @@ async function run() {
     });
 
     // User APIs
-    app.get("/users", verifyToken, async (req, res) => {
+    app.get("/users", async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
     });
@@ -988,7 +1021,6 @@ async function run() {
     app.get("/bid-history/:email", async (req, res) => {
       try {
         const { email } = req.params;
-
         const user = await userCollection.findOne({ email });
 
         if (!user?.recentActivity || user.recentActivity.length === 0) {
@@ -998,6 +1030,7 @@ async function run() {
         const auctIDs = user.recentActivity.map(
           (item) => new ObjectId(item.auctionId)
         );
+
         const auctions = await auctionCollection
           .find({ _id: { $in: auctIDs } })
           .toArray();
@@ -1008,7 +1041,6 @@ async function run() {
           const endTime = new Date(auction.endTime);
           const bids = auction.bids || [];
 
-          // Find recent activity
           const recentActivity = user.recentActivity.find(
             (activity) =>
               activity.auctionId.toString() === auction._id.toString()
@@ -1017,26 +1049,22 @@ async function run() {
           const recentBidAmount = recentActivity?.amount || 0;
           const bidTime = recentActivity?.time || "N/A";
 
-          // Calculate highest bid by user
           const userBids = bids.filter((bid) => bid.email === email);
-          const highestUserBid =
-            Math.max(recentBidAmount, ...userBids.map((bid) => bid.amount)) ||
-            0;
+          const highestUserBid = Math.max(
+            recentBidAmount,
+            ...userBids.map((bid) => bid.amount)
+          );
 
-          // Get position based on topBidders amount
           const sortedTopBidders = [...(auction.topBidders || [])].sort(
             (a, b) => b.amount - a.amount
           );
 
           let userPosition = "N/A";
-          if (sortedTopBidders.length > 0 && highestUserBid > 0) {
+          if (highestUserBid > 0) {
             const uniqueAmounts = [
               ...new Set(sortedTopBidders.map((bidder) => bidder.amount)),
             ];
-            uniqueAmounts.sort((a, b) => b - a);
-            const positionIndex = uniqueAmounts.findIndex(
-              (amount) => amount === highestUserBid
-            );
+            const positionIndex = uniqueAmounts.indexOf(highestUserBid);
             if (positionIndex !== -1) {
               userPosition = positionIndex + 1;
             }
@@ -1045,19 +1073,19 @@ async function run() {
           return {
             auctionId: auction._id,
             auctionTitle: auction.name,
-            bidder: email,
+            auctionImage: auction.images?.[0] || "",
             bidAmount: highestUserBid,
             time: bidTime,
-            status: now > endTime ? "End" : "Ongoing",
-            auctionImage: auction.images?.[0] || "",
+            status: endTime < now ? "End" : "Live",
             position: userPosition,
+            topBiddersLength: sortedTopBidders.length,
           };
         });
 
         res.status(200).json(bidHistory);
       } catch (error) {
         console.error("Error fetching bid history:", error);
-        res.status(500).json({ message: "Internal Server Error" });
+        res.status(500).json({ error: "Internal server error" });
       }
     });
 
@@ -1176,6 +1204,16 @@ async function run() {
           const result = await auctionCollection.find().toArray();
           res.send(result);
         }
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error });
+      }
+    });
+
+    //Upcoming Auction
+    app.get("/upcoming-auctions", async (req, res) => {
+      try {
+        const result = await auctionCollection.find().toArray();
+        res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error", error });
       }
@@ -1658,21 +1696,6 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
-    // app.get("/cover/:userId", async (req, res) => {
-    //   try {
-    //     const userId = req.query.userId; // Get userId from query parameters
-    //     const query = { userId: userId };
-
-    //     const result = await CoverCollection.findOne(query);
-    //     if (result) {
-    //       res.status(200).send(result);
-    //     } else {
-    //       res.status(404).send({ message: "Cover not found" });
-    //     }
-    //   } catch (error) {
-    //     res.status(500).send({ message: "Internal server error", error });
-    //   }
-    // });
     // Debug endpoint to check active socket connections
     app.get("/debug/socket-connections", (req, res) => {
       const connections = Array.from(io.sockets.sockets).map(
@@ -1686,6 +1709,147 @@ async function run() {
         activeConnections: connections.length,
         connections,
       });
+    });
+
+    app.get("/allBlogs", async (req, res) => {
+      try {
+        const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
+
+        if (!blogs || blogs.length === 0) {
+          return res
+            .status(404)
+            .json({ message: "No blogs found for this email." });
+        }
+
+        res.status(200).json(blogs); // Respond with the blogs
+      } catch (error) {
+        console.error(error);
+        res
+          .status(500)
+          .json({ message: "Server error, please try again later." });
+      }
+    });
+
+    app.get("/blogs/:email", async (req, res) => {
+      const email = req.params.email; // Extract email parameter from URL
+
+      try {
+        const query = { authorEmail: email };
+        const blogs = await blogCollection.find(query).toArray(); // Adjust to your actual schema or data retrieval method
+
+        if (!blogs || blogs.length === 0) {
+          return res
+            .status(404)
+            .json({ message: "No blogs found for this email." });
+        }
+
+        res.status(200).json(blogs); // Respond with the blogs
+      } catch (error) {
+        console.error(error);
+        res
+          .status(500)
+          .json({ message: "Server error, please try again later." });
+      }
+    });
+
+    app.get("/blog/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const blog = await blogCollection.findOne({ _id: new ObjectId(id) });
+        if (!blog) {
+          return res.status(404).json({ message: "Blog not found" });
+        }
+        res.json(blog);
+      } catch (error) {
+        res.status(500).json({ message: "Error fetching blog" });
+      }
+    });
+
+    app.post("/addBlogs", async (req, res) => {
+      try {
+        const { title, imageUrls, fullContent } = req.body;
+
+        if (!title || !imageUrls.length || !fullContent) {
+          return res.status(400).json({ message: "All fields are required." });
+        }
+        const blog = req.body;
+
+        const newBlog = {
+          ...blog,
+          createdAt: new Date(),
+        };
+
+        const result = await blogCollection.insertOne(newBlog);
+
+        if (result.insertedId) {
+          res.status(201).json({
+            message: "Blog created successfully",
+            blogId: result.insertedId,
+          });
+        } else {
+          res.status(500).json({ message: "Failed to create blog." });
+        }
+      } catch (error) {
+        console.error("Error in /add-blogs:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+      }
+    });
+
+    // Ensure that the route matches the one you're calling in the frontend
+
+    app.patch("/updateBlog/:id", async (req, res) => {
+      const { id } = req.params;
+      const { title, fullContent, imageUrls } = req.body;
+
+      try {
+        const result = await blogCollection.updateOne(
+          { _id: new ObjectId(id) }, // match document by id
+          {
+            $set: {
+              title,
+              fullContent,
+              imageUrls: imageUrls || [],
+            },
+          }
+        );
+
+        if (result.matchedCount === 0) {
+          return res
+            .status(404)
+            .json({ success: false, message: "Blog not found" });
+        }
+
+        res.json({ success: true, message: "Blog updated successfully" });
+      } catch (error) {
+        console.error("Error updating blog:", error);
+        res.status(500).json({
+          success: false,
+          message: "Server Error",
+          error: error.message,
+        });
+      }
+    });
+
+    app.delete("/delete/:id", async (req, res) => {
+      const { id } = req.params; // Extract the blog post ID from the URL parameter
+
+      try {
+        // Attempt to delete the blog post by its ID from the database
+        const result = await blogCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        // Check if the blog post was found and deleted
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: "Blog post not found." });
+        }
+
+        // Respond with a success message if the deletion is successful
+        res.status(200).json({ message: "Blog post deleted successfully." });
+      } catch (error) {
+        console.error("Error deleting blog post:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+      }
     });
   } finally {
   }
