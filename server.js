@@ -16,7 +16,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://rex-auction.web.app"],
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     credentials: true,
   },
   pingTimeout: 60000,
@@ -25,6 +25,7 @@ const io = new Server(server, {
 app.use(
   cors({
     origin: ["http://localhost:5173", "https://rex-auction.web.app"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     credentials: true,
   })
 );
@@ -46,7 +47,6 @@ async function run() {
   try {
     await client.connect();
     console.log("Connected to MongoDB");
-
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
@@ -268,8 +268,6 @@ async function run() {
     app.post("/paymentsWithSSL", async (req, res) => {
       const paymentData = req.body;
       // const result = await SSLComCollection.insertOne(paymentData)
-      console.log("data ", paymentData);
-
       const trxid = new ObjectId().toString();
       paymentData.trxid = trxid;
       const initiate = {
@@ -302,6 +300,8 @@ async function run() {
         cus_fax: "01711111111",
         ship_name: "Customer Name",
         ship_add1: "Dhaka",
+        ship_add2: "Dhaka",
+        ship_city: "Dhaka",
         ship_postcode: 1000,
         ship_country: "Bangladesh",
       };
@@ -314,7 +314,6 @@ async function run() {
           "Content-Type": "application/x-www-form-urlencoded",
         },
       });
-      console.log(iniResponse, "response");
 
       await SSLComCollection.insertOne(paymentData);
 
@@ -322,51 +321,11 @@ async function run() {
       // console.log(gatewayURL);
       res.send({ gatewayURL });
     });
-    // Payment APIs with rex wallet
-    app.post("/rexPayment", async (req, res) => {
-      const paymentData = req.body;
-      try {
-        const result = await SSLComCollection.insertOne(paymentData);
-        console.log("data ", paymentData);
-        res.status(201).send({ success: true, insertedId: result.insertedId });
-      } catch (error) {
-        console.error("Payment Error:", error);
-        res.status(500).send({ message: "Failed to process payment" });
-      }
-    });
-
-    app.post("/success-payment", async (req, res) => {
-      // success payment data
-      const paymentSuccess = req.body;
-      // console.log(paymentSuccess,"payment success");
-      const { data } = await axios.get(
-        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
-      );
-      console.log(data);
-      if (data.status !== "VALID") {
-        return res.send({ message: "invalid payment" });
-      }
-      // update the payment status in the database
-      const updateResult = await SSLComCollection.updateOne(
-        { trxid: paymentSuccess.tran_id },
-        {
-          $set: {
-            PaymentStatus: "success",
-          },
-        }
-      );
-      res.redirect(
-        `http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`
-      );
-      console.log(updateResult, "update result");
-    });
-
-    app.patch("/paymentConfirmation", async (req, res) => {
+    app.patch("/confirmation", async (req, res) => {
       try {
         const { auctionId } = req.body;
 
         if (!auctionId) {
-          console.log("Auction ID is required");
           return res
             .status(400)
             .json({ success: false, message: "Auction ID is required" });
@@ -386,6 +345,10 @@ async function run() {
             message: "Auction not found",
           });
         }
+        res.status(201).send({
+          success: true,
+          message: "successfully updated",
+        });
       } catch (error) {
         console.error("Payment confirmation error:", error);
         res.status(500).json({
@@ -394,8 +357,45 @@ async function run() {
         });
       }
     });
+    // Payment APIs with rex wallet
+    app.post("/rexPayment", async (req, res) => {
+      const paymentData = req.body;
+      try {
+        const result = await SSLComCollection.insertOne(paymentData);
+
+        res.status(201).send({ success: true, insertedId: result.insertedId });
+      } catch (error) {
+        res.status(500).send({ message: "Failed to process payment" });
+      }
+    });
+
+    app.post("/success-payment", async (req, res) => {
+      const paymentSuccess = req.body;
+      console.log(paymentSuccess, "payment success");
+      const { data } = await axios.get(
+        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
+      );
+
+      if (data.status !== "VALID") {
+        return res.send({ message: "invalid payment" });
+      }
+
+      // Update SSLComCollection
+      const updateResult = await SSLComCollection.updateOne(
+        { trxid: paymentSuccess.tran_id },
+        {
+          $set: {
+            PaymentStatus: "success",
+          },
+        }
+      );
+      res.redirect(
+        `http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`
+      );
+    });
 
     // Payment data getting
+
     app.get("/payments", async (req, res) => {
       const users = await SSLComCollection.find().toArray();
       res.send(users);
@@ -406,28 +406,6 @@ async function run() {
       const payment = await SSLComCollection.findOne({ trxid: trxid });
       res.send(payment);
     });
-    app.post("/success-payment", async (req, res) => {
-      // success payment data
-      const paymentSuccess = req.body;
-      const { data } = await axios.get(
-        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=rexau67f77422a8374&store_passwd=rexau67f77422a8374@ssl&format=json`
-      );
-      if (data.status !== "VALID") {
-        return res.send({ message: "invalid payment" });
-      }
-      // update the payment status in the database
-      const updateResult = await SSLComCollection.updateOne(
-        { trxid: paymentSuccess.tran_id },
-        {
-          $set: {
-            status: "success",
-          },
-        }
-      );
-      res.redirect("http://localhost:5173/dashboard/payment");
-      console.log(updateResult, "update result");
-    });
-
     app.post("/create-sslCom", async (req, res) => {
       const paymentData = req.body;
       console.log(paymentData);
@@ -1143,6 +1121,25 @@ async function run() {
       }
     });
 
+    // settings Patch
+    app.patch("/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const updates = req.body;
+      const filter = { email: email };
+      const updateDoc = { $set: updates };
+
+      try {
+        const result = await userCollection.updateOne(filter, updateDoc);
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
+        }
+        const updatedUser = await userCollection.findOne(filter);
+        res.send(updatedUser);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update profile" });
+      }
+    });
+
     // Announcement APIs
     app.get("/announcement", async (req, res) => {
       const result = await announcementCollection.find().toArray();
@@ -1696,6 +1693,21 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
+    // app.get("/cover/:userId", async (req, res) => {
+    //   try {
+    //     const userId = req.query.userId; // Get userId from query parameters
+    //     const query = { userId: userId };
+
+    //     const result = await CoverCollection.findOne(query);
+    //     if (result) {
+    //       res.status(200).send(result);
+    //     } else {
+    //       res.status(404).send({ message: "Cover not found" });
+    //     }
+    //   } catch (error) {
+    //     res.status(500).send({ message: "Internal server error", error });
+    //   }
+    // });
     // Debug endpoint to check active socket connections
     app.get("/debug/socket-connections", (req, res) => {
       const connections = Array.from(io.sockets.sockets).map(

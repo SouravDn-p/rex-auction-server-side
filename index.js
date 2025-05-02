@@ -63,20 +63,6 @@ async function run() {
     const endedAuctionCollection = db.collection("endedAuctionsList");
     const blogCollection = db.collection("blogList");
 
-    // SSLCOMMERZE ID
-
-    //     Store ID: rexau67f77422a8374
-    // Store Password (API/Secret Key): rexau67f77422a8374@ssl
-
-    // Merchant Panel URL: https://sandbox.sslcommerz.com/manage/ (Credential as you inputted in the time of registration)
-
-    // Store name: testrexauqg5q
-    // Registered URL: www.rex-auction.web.app.com
-    // Session API to generate transaction: https://sandbox.sslcommerz.com/gwprocess/v3/api.php
-    // Validation API: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?wsdl
-    // Validation API (Web Service) name: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php
-
-    // JWT Middleware
     const verifyToken = (req, res, next) => {
       const token =
         req?.cookies?.token || req.headers["authorization"]?.split(" ")[1];
@@ -90,7 +76,6 @@ async function run() {
       });
     };
 
-    // Verify Admin Middleware
     const verifyAdmin = async (req, res, next) => {
       const email = req.decodedUser.email;
       const query = { email: email };
@@ -101,7 +86,6 @@ async function run() {
       next();
     };
 
-    // Verify Seller Middleware
     const verifySeller = async (req, res, next) => {
       const email = req.decodedUser.email;
       const query = { email: email };
@@ -112,13 +96,11 @@ async function run() {
       next();
     };
 
-    // Socket.IO Logic for Chat and Notifications
     io.on("connection", (socket) => {
       console.log("New client connected:", socket.id);
 
       const joinedRooms = new Set();
 
-      // Send immediate connection acknowledgment
       socket.emit("connection_ack", {
         id: socket.id,
         status: "connected",
@@ -191,10 +173,8 @@ async function run() {
           const result = await messagesCollection.insertOne(message);
 
           if (result.acknowledged) {
-            // Emit to the chat room
             io.to(chatId).emit("receiveMessage", message);
 
-            // Emit to sender's and receiver's personal rooms for sidebar updates
             io.to(`user:${senderId}`).emit("receiveMessage", message);
             io.to(`user:${receiverId}`).emit("receiveMessage", message);
 
@@ -213,10 +193,8 @@ async function run() {
         }
       });
 
-      // Handle sending notifications - FIXED: removed duplicate handler
       socket.on("sendNotification", async (notificationData, callback) => {
         try {
-          // Add a unique ID to the notification
           const notificationId = new ObjectId().toString();
           const notification = {
             ...notificationData,
@@ -224,18 +202,15 @@ async function run() {
             createdAt: new Date(),
           };
 
-          // Save notification to database
           const result = await notificationsCollection.insertOne(notification);
 
           if (result.acknowledged) {
-            // If recipient is specified, emit to that user's personal room
             if (notification.recipient && notification.recipient !== "all") {
               io.to(`user:${notification.recipient}`).emit(
                 "receiveNotification",
                 notification
               );
             } else {
-              // Otherwise broadcast to all connected clients
               io.emit("receiveNotification", notification);
             }
 
@@ -264,10 +239,8 @@ async function run() {
       });
     });
 
-    // Payment APIs with SSLcom
     app.post("/paymentsWithSSL", async (req, res) => {
       const paymentData = req.body;
-      // const result = await SSLComCollection.insertOne(paymentData)
       const trxid = new ObjectId().toString();
       paymentData.trxid = trxid;
       const initiate = {
@@ -318,7 +291,6 @@ async function run() {
       await SSLComCollection.insertOne(paymentData);
 
       const gatewayURL = iniResponse?.data?.GatewayPageURL;
-      // console.log(gatewayURL);
       res.send({ gatewayURL });
     });
     app.patch("/confirmation", async (req, res) => {
@@ -357,7 +329,6 @@ async function run() {
         });
       }
     });
-    // Payment APIs with rex wallet
     app.post("/rexPayment", async (req, res) => {
       const paymentData = req.body;
       try {
@@ -380,7 +351,6 @@ async function run() {
         return res.send({ message: "invalid payment" });
       }
 
-      // Update SSLComCollection
       const updateResult = await SSLComCollection.updateOne(
         { trxid: paymentSuccess.tran_id },
         {
@@ -393,8 +363,6 @@ async function run() {
         `http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`
       );
     });
-
-    // Payment data getting
 
     app.get("/payments", async (req, res) => {
       const users = await SSLComCollection.find().toArray();
@@ -411,7 +379,6 @@ async function run() {
       console.log(paymentData);
     });
 
-    // Chat API Endpoints
     app.get(
       "/messages/email/:userEmail/:selectedUserEmail",
       async (req, res) => {
@@ -442,7 +409,6 @@ async function run() {
       }
     );
 
-    // Fetch the most recent message
     app.get("/recent-messages/:userEmail", async (req, res) => {
       const { userEmail } = req.params;
       try {
@@ -468,7 +434,6 @@ async function run() {
                 lastMessage: { $first: "$$ROOT" },
               },
             },
-            // Project the required fields
             {
               $project: {
                 userEmail: "$_id",
@@ -486,7 +451,6 @@ async function run() {
       }
     });
 
-    // Socket connection test endpoint
     app.get("/socket-test", (req, res) => {
       res.json({
         status: "Socket.IO server running",
@@ -495,7 +459,6 @@ async function run() {
       });
     });
 
-    // API endpoints for notifications - FIXED: moved inside run() function
     app.get("/notifications/:userEmail", async (req, res) => {
       const { userEmail } = req.params;
       try {
@@ -514,31 +477,27 @@ async function run() {
       }
     });
 
-    app.put(
-      "/notifications/mark-read/:userEmail",
-      // verifyToken,
-      async (req, res) => {
-        const { userEmail } = req.params;
-        try {
-          const result = await notificationsCollection.updateMany(
-            {
-              $or: [
-                { recipient: userEmail, read: false },
-                { recipient: "all", read: false },
-              ],
-            },
-            { $set: { read: true } }
-          );
+    app.put("/notifications/mark-read/:userEmail", async (req, res) => {
+      const { userEmail } = req.params;
+      try {
+        const result = await notificationsCollection.updateMany(
+          {
+            $or: [
+              { recipient: userEmail, read: false },
+              { recipient: "all", read: false },
+            ],
+          },
+          { $set: { read: true } }
+        );
 
-          res.send({ success: true, modifiedCount: result.modifiedCount });
-        } catch (error) {
-          console.error("Error marking notifications as read:", error);
-          res
-            .status(500)
-            .send({ message: "Failed to mark notifications as read" });
-        }
+        res.send({ success: true, modifiedCount: result.modifiedCount });
+      } catch (error) {
+        console.error("Error marking notifications as read:", error);
+        res
+          .status(500)
+          .send({ message: "Failed to mark notifications as read" });
       }
-    );
+    });
 
     app.post("/notifications", async (req, res) => {
       try {
@@ -571,7 +530,6 @@ async function run() {
         setNotificationCount((prev) => prev - 1);
       }
 
-      // Navigate based on notification type
       if (notification.type === "auction" && notification.auctionData?._id) {
         navigate(`/dashboard/auction-details/${notification.auctionData._id}`);
       } else if (notification.type === "announcement") {
@@ -582,10 +540,8 @@ async function run() {
         });
       }
 
-      // Close notifications panel
       setIsNotificationsOpen(false);
     };
-    // Socket.IO Logic for Auction Bidding
     module.exports = (io) => {
       io.on("connection", (socket) => {
         console.log("New client connected:", socket.id);
@@ -596,7 +552,6 @@ async function run() {
           timestamp: new Date(),
         });
 
-        // Join auction room
         socket.on("joinAuction", ({ auctionId }) => {
           if (auctionId) {
             socket.join(`auction:${auctionId}`);
@@ -606,7 +561,6 @@ async function run() {
           }
         });
 
-        // Leave auction room
         socket.on("leaveAuction", ({ auctionId }) => {
           if (auctionId) {
             socket.leave(`auction:${auctionId}`);
@@ -614,7 +568,6 @@ async function run() {
           }
         });
 
-        // Handle new bids
         socket.on("placeBid", async (bidData) => {
           try {
             console.log(`New bid received from ${socket.id}:`, bidData);
@@ -634,13 +587,11 @@ async function run() {
       });
     };
 
-    // Create index for faster queries and to ensure one reaction per user per auction
     await reactionsCollection.createIndex(
       { auctionId: 1, userId: 1 },
       { unique: true }
     );
 
-    // POST: Add or update a reaction
     app.post("/auction-reaction", async (req, res) => {
       try {
         const { auctionId, userId, reactionType } = req.body;
@@ -653,14 +604,12 @@ async function run() {
           });
         }
 
-        // Check if user already has a reaction for this auction
         const existingReaction = await reactionsCollection.findOne({
           auctionId,
           userId,
         });
 
         if (existingReaction) {
-          // If reactionType is null, remove the reaction
           if (reactionType === null) {
             const result = await reactionsCollection.deleteOne({
               auctionId,
@@ -673,7 +622,6 @@ async function run() {
             });
           }
 
-          // Update existing reaction
           const result = await reactionsCollection.updateOne(
             { auctionId, userId },
             { $set: { reactionType, updatedAt: new Date() } }
@@ -685,7 +633,6 @@ async function run() {
             result,
           });
         } else {
-          // If reactionType is null, no need to create a new document
           if (reactionType === null) {
             return res.send({
               success: true,
@@ -693,7 +640,6 @@ async function run() {
             });
           }
 
-          // Create new reaction
           const result = await reactionsCollection.insertOne({
             auctionId,
             userId,
@@ -710,7 +656,6 @@ async function run() {
       } catch (error) {
         console.error("Error handling reaction:", error);
 
-        // Handle duplicate key error (user trying to add multiple reactions)
         if (error.code === 11000) {
           return res.status(409).send({
             success: false,
@@ -726,18 +671,15 @@ async function run() {
       }
     });
 
-    // GET: Retrieve reactions for an auction
     app.get("/auction-reactions/:auctionId", async (req, res) => {
       try {
         const { auctionId } = req.params;
         const { userId } = req.query;
 
-        // Get all reactions for this auction
         const reactions = await reactionsCollection
           .find({ auctionId })
           .toArray();
 
-        // Count reactions by type
         const reactionCounts = {
           likes: reactions.filter((r) => r.reactionType === "likes").length,
           loves: reactions.filter((r) => r.reactionType === "loves").length,
@@ -746,7 +688,6 @@ async function run() {
           flags: reactions.filter((r) => r.reactionType === "flags").length,
         };
 
-        // If userId is provided, get the user's reaction
         let userReactions = [];
         if (userId) {
           const userReaction = reactions.find((r) => r.userId === userId);
@@ -771,10 +712,8 @@ async function run() {
       }
     });
 
-    // GET: Get reaction statistics for all auctions
     app.get("/auction-reactions-stats", async (req, res) => {
       try {
-        // Aggregate to get total reactions by type
         const stats = await reactionsCollection
           .aggregate([
             {
@@ -786,13 +725,11 @@ async function run() {
           ])
           .toArray();
 
-        // Format the results
         const formattedStats = stats.reduce((acc, stat) => {
           acc[stat._id] = stat.count;
           return acc;
         }, {});
 
-        // Get total auctions with reactions
         const auctionsWithReactions = await reactionsCollection
           .aggregate([
             {
@@ -821,12 +758,10 @@ async function run() {
       }
     });
 
-    // GET: Get most reacted auctions
     app.get("/most-reacted-auctions", async (req, res) => {
       try {
         const { limit = 5 } = req.query;
 
-        // Aggregate to get auctions with most reactions
         const mostReactedAuctions = await reactionsCollection
           .aggregate([
             {
@@ -847,7 +782,6 @@ async function run() {
           ])
           .toArray();
 
-        // For each auction, count reaction types
         const result = mostReactedAuctions.map((auction) => {
           const reactionCounts = auction.reactionTypes.reduce((acc, type) => {
             acc[type] = (acc[type] || 0) + 1;
@@ -875,15 +809,9 @@ async function run() {
       }
     });
 
-    // DELETE: Remove all reactions for an auction (admin only)
     app.delete("/auction-reactions/:auctionId", async (req, res) => {
       try {
         const { auctionId } = req.params;
-
-        // In a real app, you would verify admin permissions here
-        // if (!isAdmin(req.user)) {
-        //   return res.status(403).send({ success: false, message: "Unauthorized" });
-        // }
 
         const result = await reactionsCollection.deleteMany({ auctionId });
 
@@ -902,7 +830,6 @@ async function run() {
       }
     });
 
-    // JWT Routes
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
@@ -919,7 +846,6 @@ async function run() {
         .send({ success: true });
     });
 
-    // Seller Request APIs
     app.get("/sellerRequest/:becomeSellerStatus", async (req, res) => {
       try {
         const becomeSellerStatus = req.params.becomeSellerStatus;
@@ -990,7 +916,6 @@ async function run() {
       }
     });
 
-    // User APIs
     app.get("/users", async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
@@ -1375,7 +1300,6 @@ async function run() {
       }
     });
 
-    // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
       const { accountBalance, transaction } = req.body;
@@ -1404,7 +1328,6 @@ async function run() {
       }
     });
 
-    // Specific user.recentActivity  update
     app.patch("/updateUserRecentActivity/:id", async (req, res) => {
       const userId = req.params.id;
       const { bidData } = req.body;
@@ -1433,7 +1356,6 @@ async function run() {
       }
     });
 
-    // Live Bidding APIs
     app.get("/live-bid/top", async (req, res) => {
       const { auctionId } = req.query;
       const query = auctionId ? { auctionId } : {};
@@ -1475,7 +1397,6 @@ async function run() {
       res.send(result);
     });
 
-    // Reports API
     app.post("/reports", async (req, res) => {
       try {
         const reports = req.body;
@@ -1485,7 +1406,6 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
-    // GET a report(Joyeta)
     app.get("/reports", async (req, res) => {
       try {
         const reports = await reportCollection.find().toArray();
@@ -1497,7 +1417,6 @@ async function run() {
       }
     });
 
-    // POST a report (Joyeta)
     app.post("/reports", async (req, res) => {
       try {
         const report = req.body;
@@ -1515,8 +1434,6 @@ async function run() {
       }
     });
 
-    //feedback get method
-
     app.get("/feedbacks", async (req, res) => {
       try {
         const feedbacks = await feedbackCollection.find().toArray();
@@ -1525,8 +1442,6 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
-
-    //feedback post api
 
     app.post("/feedback", async (req, res) => {
       try {
@@ -1541,7 +1456,6 @@ async function run() {
       }
     });
 
-    // POST a report (Joyeta)
     app.post("/reports", async (req, res) => {
       try {
         const report = req.body;
@@ -1559,8 +1473,6 @@ async function run() {
       }
     });
 
-    //feedback get method
-
     app.get("/feedbacks", async (req, res) => {
       try {
         const feedbacks = await feedbackCollection.find().toArray();
@@ -1569,8 +1481,6 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
-
-    //feedback post api
 
     app.post("/feedback", async (req, res) => {
       try {
@@ -1584,13 +1494,6 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
-    // cover collection api
-    // app.post("/cover", async (req, res) => {
-    //   const feedback = req.body;
-
-    //   const result = await CoverCollection.insertOne(feedback);
-    //   res.status(200).send({ success: true, result });
-    // });
 
     app.patch("/cover", async (req, res) => {
       const userId = req.params.id;
@@ -1600,11 +1503,9 @@ async function run() {
       const result = await userCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
-    // Update user profile
     app.patch("/user/:email", async (req, res) => {
       const email = req.params.email;
       const updates = req.body;
-      // List of allowed fields to update
       const allowedFields = [
         "name",
         "email",
@@ -1622,7 +1523,6 @@ async function run() {
         "watchingNow",
       ];
 
-      // Filter updates to only include allowed fields
       const filteredUpdates = Object.keys(updates)
         .filter((key) => allowedFields.includes(key))
         .reduce((obj, key) => {
@@ -1645,7 +1545,6 @@ async function run() {
       }
     });
 
-    // Update cover photo
     app.patch("/cover/:id", async (req, res) => {
       const userId = req.params.id;
       const { cover } = req.body;
@@ -1663,14 +1562,12 @@ async function run() {
       }
     });
 
-    // Upload photo
     app.post("/upload-photo", upload.single("photo"), async (req, res) => {
       try {
         const photo = req.file;
         if (!photo) {
           return res.status(400).send({ message: "No photo uploaded" });
         }
-        // Upload to Cloudinary
         const uploadResult = await new Promise((resolve, reject) => {
           cloudinary.uploader
             .upload_stream({ resource_type: "image" }, (error, result) => {
@@ -1693,22 +1590,6 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
-    // app.get("/cover/:userId", async (req, res) => {
-    //   try {
-    //     const userId = req.query.userId; // Get userId from query parameters
-    //     const query = { userId: userId };
-
-    //     const result = await CoverCollection.findOne(query);
-    //     if (result) {
-    //       res.status(200).send(result);
-    //     } else {
-    //       res.status(404).send({ message: "Cover not found" });
-    //     }
-    //   } catch (error) {
-    //     res.status(500).send({ message: "Internal server error", error });
-    //   }
-    // });
-    // Debug endpoint to check active socket connections
     app.get("/debug/socket-connections", (req, res) => {
       const connections = Array.from(io.sockets.sockets).map(
         ([id, socket]) => ({
@@ -1725,15 +1606,14 @@ async function run() {
 
     app.get("/allBlogs", async (req, res) => {
       try {
-        const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
-
+        const blogs = await blogCollection.find().toArray();
         if (!blogs || blogs.length === 0) {
           return res
             .status(404)
             .json({ message: "No blogs found for this email." });
         }
 
-        res.status(200).json(blogs); // Respond with the blogs
+        res.status(200).json(blogs);
       } catch (error) {
         console.error(error);
         res
@@ -1743,19 +1623,18 @@ async function run() {
     });
 
     app.get("/blogs/:email", async (req, res) => {
-      const email = req.params.email; // Extract email parameter from URL
+      const email = req.params.email;
 
       try {
         const query = { authorEmail: email };
-        const blogs = await blogCollection.find(query).toArray(); // Adjust to your actual schema or data retrieval method
-
+        const blogs = await blogCollection.find(query).toArray();
         if (!blogs || blogs.length === 0) {
           return res
             .status(404)
             .json({ message: "No blogs found for this email." });
         }
 
-        res.status(200).json(blogs); // Respond with the blogs
+        res.status(200).json(blogs);
       } catch (error) {
         console.error(error);
         res
@@ -1807,15 +1686,13 @@ async function run() {
       }
     });
 
-    // Ensure that the route matches the one you're calling in the frontend
-
     app.patch("/updateBlog/:id", async (req, res) => {
       const { id } = req.params;
       const { title, fullContent, imageUrls } = req.body;
 
       try {
         const result = await blogCollection.updateOne(
-          { _id: new ObjectId(id) }, // match document by id
+          { _id: new ObjectId(id) },
           {
             $set: {
               title,
@@ -1843,20 +1720,17 @@ async function run() {
     });
 
     app.delete("/delete/:id", async (req, res) => {
-      const { id } = req.params; // Extract the blog post ID from the URL parameter
+      const { id } = req.params;
 
       try {
-        // Attempt to delete the blog post by its ID from the database
         const result = await blogCollection.deleteOne({
           _id: new ObjectId(id),
         });
 
-        // Check if the blog post was found and deleted
         if (result.deletedCount === 0) {
           return res.status(404).json({ message: "Blog post not found." });
         }
 
-        // Respond with a success message if the deletion is successful
         res.status(200).json({ message: "Blog post deleted successfully." });
       } catch (error) {
         console.error("Error deleting blog post:", error);
