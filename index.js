@@ -16,7 +16,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://rex-auction.web.app"],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     credentials: true,
   },
   pingTimeout: 60000,
@@ -25,6 +25,7 @@ const io = new Server(server, {
 app.use(
   cors({
     origin: ["http://localhost:5173", "https://rex-auction.web.app"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     credentials: true,
   })
 );
