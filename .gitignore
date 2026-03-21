@@ -6,6 +6,9 @@ server.js
 sudipta.js
 test.js
 text.js
-config.bat
 .gitignore
-temp_interactive_push.bat
+
+.env
+.env*
+.env.local*
+.env.local
