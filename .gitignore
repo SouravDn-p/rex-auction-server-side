@@ -8,7 +8,6 @@ test.js
 text.js
 .gitignore
 
-.env
-.env*
 .env.local*
-.env.local
+temp_interactive_push.bat
+config.bat
