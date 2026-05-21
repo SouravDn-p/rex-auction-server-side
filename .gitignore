@@ -9,5 +9,3 @@ text.js
 .gitignore
 
 .env.local*
-temp_interactive_push.bat
-config.bat
